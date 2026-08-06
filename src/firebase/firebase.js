@@ -219,6 +219,19 @@ export function subscribeToAuth(callback) {
 }
 
 // Helper utilities for roster and role parsing
+export function extractPlayerNumber(p, fallbackIndex = null) {
+  if (!p || typeof p !== 'object') {
+    return fallbackIndex !== null ? String(fallbackIndex) : '';
+  }
+  const fields = [p.num, p.number, p.jerseyNumber, p.jersey_number, p.jersey, p.shirtNumber, p.shirt_number, p.no, p.n];
+  for (const val of fields) {
+    if (val !== undefined && val !== null && String(val).trim() !== '') {
+      return String(val).trim();
+    }
+  }
+  return fallbackIndex !== null ? String(fallbackIndex) : '';
+}
+
 function parsePlayersFromJson(playersData) {
   if (!playersData) return [];
   let list = [];
@@ -227,14 +240,18 @@ function parsePlayersFromJson(playersData) {
   } else if (typeof playersData === 'object') {
     list = Object.values(playersData);
   }
-  return list.filter(p => p && typeof p === 'object' && p.name).map((p, idx) => ({
-    id: p.id || 'p_' + idx,
-    name: String(p.name).trim().toUpperCase(),
-    number: p.number ? String(p.number) : String(idx + 1),
-    role: normalizeRole(p.role),
-    team: p.team || null,
-    active: p.active !== false
-  }));
+  return list.filter(p => p && typeof p === 'object' && p.name).map((p, idx) => {
+    const pNum = extractPlayerNumber(p, idx + 1);
+    return {
+      id: p.id || 'p_' + idx,
+      name: String(p.name).trim().toUpperCase(),
+      number: pNum,
+      num: pNum,
+      role: normalizeRole(p.role),
+      team: p.team || null,
+      active: p.active !== false
+    };
+  });
 }
 
 function normalizeRole(role) {
@@ -293,8 +310,9 @@ function processUserRosterAndFormation(uData) {
 
   if (fData && fData.tokens && Array.isArray(fData.tokens)) {
     fData.tokens.forEach((t, idx) => {
-      if (t && t.name) {
-        const matched = matchPlayerInRoster(t.name, rawRoster);
+      if (t && (t.name || t.label || t.text)) {
+        const tokenName = String(t.name || t.label || t.text).trim().toUpperCase();
+        const matched = matchPlayerInRoster(tokenName, rawRoster);
         if (matched && matched.active === false) return; // Skip inactive players in roster
 
         const isTeamA = (t.team === 'team-a' || t.team === 'A' || t.team === 'TEAM-A' || String(t.team).toUpperCase() === teamNameA);
@@ -309,10 +327,13 @@ function processUserRosterAndFormation(uData) {
           resolvedRole = 'LIBERO';
         }
 
+        const resolvedNum = (matched && extractPlayerNumber(matched)) || extractPlayerNumber(t, idx + 1);
+
         activeFormationPlayers.push({
           id: matched ? matched.id : 'token_' + idx,
-          name: matched ? matched.name : String(t.name).toUpperCase(),
-          number: matched ? matched.number : String(idx + 1),
+          name: matched ? matched.name : tokenName,
+          number: resolvedNum,
+          num: resolvedNum,
           role: resolvedRole,
           team: teamCode,
           active: true
@@ -328,8 +349,11 @@ function processUserRosterAndFormation(uData) {
       if (!activeFormationPlayers.some(ap => ap.name === r.name)) {
         const defaultTeam = idx % 2 === 0 ? teamNameA : teamNameB;
         const assignedTeam = normalizePlayerTeam(r.team, teamNameA, teamNameB, defaultTeam);
+        const rNum = extractPlayerNumber(r, idx + 1);
         activeFormationPlayers.push({
           ...r,
+          number: rNum,
+          num: rNum,
           team: assignedTeam
         });
       }
@@ -517,7 +541,14 @@ export async function addPlayerToFirebase(playerData, userId = null) {
       currentList = Object.values(currentList);
     }
     
-    currentList.push(playerData);
+    const numVal = extractPlayerNumber(playerData);
+    const normalizedPlayerData = {
+      ...playerData,
+      number: numVal,
+      num: numVal
+    };
+
+    currentList.push(normalizedPlayerData);
     await set(userPlayersRef, currentList);
     
     return { id: 'p_' + Date.now(), error: null };

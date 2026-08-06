@@ -65,7 +65,9 @@ export default function App() {
 
       if (isPlayerCard && sel) {
         newMainText = sel.name;
-        newSubText = `#${sel.number} • ${sel.role}`;
+        const pNum = sel.number !== undefined && sel.number !== null ? String(sel.number) : '';
+        const numPrefix = pNum ? `#${pNum} • ` : '';
+        newSubText = `${numPrefix}${sel.role}`;
         if (sel.primaryColor) newPrimaryColor = sel.primaryColor;
         if (sel.secondaryColor) newSecondaryColor = sel.secondaryColor;
       }

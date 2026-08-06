@@ -40,14 +40,16 @@ export default function ControlsPanel({ config, setConfig, user, onOpenAuth }) {
   };
 
   const handleSelectFirebasePlayer = ({ name, number, role, team, primaryColor, secondaryColor }) => {
-    const selPlayer = { name, number, role, team, primaryColor, secondaryColor };
+    const pNum = number !== undefined && number !== null ? String(number) : '';
+    const selPlayer = { name, number: pNum, role, team, primaryColor, secondaryColor };
+    const numPrefix = pNum ? `#${pNum} • ` : '';
     setConfig((prev) => {
       const isPlayerCard = prev.presetId === 'player_card';
       return {
         ...prev,
         selectedPlayer: selPlayer,
         mainText: isPlayerCard ? name : prev.mainText,
-        subText: isPlayerCard ? `#${number} • ${role}` : `${name}\n#${number} • ${role}`,
+        subText: isPlayerCard ? `${numPrefix}${role}` : `${name}\n${numPrefix}${role}`,
         primaryColor: primaryColor || prev.primaryColor,
         secondaryColor: secondaryColor || prev.secondaryColor,
       };

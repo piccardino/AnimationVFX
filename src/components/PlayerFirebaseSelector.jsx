@@ -65,7 +65,7 @@ export default function PlayerFirebaseSelector({ user, onSelectPlayer, onOpenAut
           if (onSelectPlayer) {
             onSelectPlayer({
               name: firstP.name,
-              number: firstP.number,
+              number: firstP.number !== undefined && firstP.number !== null ? firstP.number : (firstP.num || ''),
               role: firstP.role,
               team: firstP.team || res.teamA,
               primaryColor: palette.primary,
@@ -90,9 +90,10 @@ export default function PlayerFirebaseSelector({ user, onSelectPlayer, onOpenAut
       const isTeamB = isMatchTeam(player.team, teamNames.teamB, 'B');
       const palette = isTeamB ? TEAM_COLOR_SCHEMES.B : TEAM_COLOR_SCHEMES.A;
 
+      const pNum = player.number !== undefined && player.number !== null ? player.number : (player.num || '');
       onSelectPlayer({
         name: player.name,
-        number: player.number,
+        number: pNum,
         role: player.role,
         team: player.team || teamNames.teamA,
         primaryColor: palette.primary,
@@ -187,9 +188,10 @@ export default function PlayerFirebaseSelector({ user, onSelectPlayer, onOpenAut
             {filteredPlayers.map((p) => {
               const isTeamB = isMatchTeam(p.team, teamNames.teamB, 'B');
               const teamTag = isTeamB ? `🔴 ${teamNames.teamB}` : `🔵 ${teamNames.teamA}`;
+              const pNumStr = p.number !== undefined && p.number !== null ? p.number : (p.num || '');
               return (
                 <option key={p.id} value={p.id}>
-                  [{teamTag}] #{p.number} - {p.name} ({p.role})
+                  [{teamTag}] #{pNumStr} - {p.name} ({p.role})
                 </option>
               );
             })}

@@ -1257,9 +1257,16 @@ function renderPlayerCard(ctx, width, height, progress, config, ls = 1.0) {
   ctx.stroke();
 
   let jerseyNum = '🏐';
-  const numMatch = playerRole.match(/(?:N\.|#)\s*(\d+)/i) || playerName.match(/(?:N\.|#)\s*(\d+)/i);
-  if (numMatch && numMatch[1]) {
-    jerseyNum = `#${numMatch[1]}`;
+  if (config.selectedPlayer && (config.selectedPlayer.number !== undefined && config.selectedPlayer.number !== null && String(config.selectedPlayer.number).trim() !== '')) {
+    jerseyNum = `#${config.selectedPlayer.number}`;
+  } else {
+    const numMatch = playerRole.match(/(?:N[°\.]?|NO\.|NUM\.|#)\s*(\d+)/i)
+      || playerRole.match(/\b(\d+)\b/)
+      || playerName.match(/(?:N[°\.]?|NO\.|NUM\.|#)\s*(\d+)/i)
+      || playerName.match(/\b(\d+)\b/);
+    if (numMatch && numMatch[1]) {
+      jerseyNum = `#${numMatch[1]}`;
+    }
   }
 
   ctx.font = '900 36px "Anton", sans-serif';
