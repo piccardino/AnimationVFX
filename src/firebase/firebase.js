@@ -362,8 +362,20 @@ export async function fetchUserProfile(uid) {
   return null;
 }
 
+// Helper to extract team names from player list if available
+function deriveTeamNames(players, defaultA = 'TEAM A', defaultB = 'TEAM B') {
+  if (!players || !Array.isArray(players)) return { teamA: defaultA, teamB: defaultB };
+  const teams = Array.from(new Set(players.map(p => p && p.team).filter(Boolean)));
+  const teamA = teams[0] || defaultA;
+  const teamB = teams[1] || defaultB;
+  return { teamA, teamB };
+}
+
 // Fetch active match formation & roster from Realtime DB
 export async function fetchPlayersFromFirebase(userId = null) {
+  if (!rtdb) initFirebase();
+
+  // 1. Try fetching logged-in user's custom formation & roster
   if (userId && rtdb) {
     try {
       const formationSnap = await get(child(ref(rtdb), `users/${userId}/matchData/formation`));
@@ -420,26 +432,61 @@ export async function fetchPlayersFromFirebase(userId = null) {
             });
           }
         });
-        return { players: activeFormationPlayers, teamA: teamNameA, teamB: teamNameB, error: null };
+        const derived = deriveTeamNames(activeFormationPlayers, teamNameA, teamNameB);
+        return { players: activeFormationPlayers, teamA: derived.teamA, teamB: derived.teamB, error: null };
       }
 
       if (allRoster.length > 0) {
-        return { players: allRoster, teamA: teamNameA, teamB: teamNameB, error: null };
+        const derived = deriveTeamNames(allRoster, teamNameA, teamNameB);
+        return { players: allRoster, teamA: derived.teamA, teamB: derived.teamB, error: null };
       }
     } catch (e) {
       console.warn('User RTDB fetch warning:', e);
     }
   }
 
+  // 2. Fallback: Query RTDB using the authenticated Firebase SDK (rtdb) instead of raw HTTP fetch
+  if (rtdb) {
+    try {
+      const rootSnap = await get(ref(rtdb));
+      if (rootSnap.exists()) {
+        const rootData = rootSnap.val();
+        const extracted = parsePlayersFromJson(rootData);
+        if (extracted.length > 0) {
+          let teamA = 'TEAM A';
+          let teamB = 'TEAM B';
+
+          function findBenches(node) {
+            if (!node || typeof node !== 'object') return;
+            if (node.benchA && String(node.benchA).trim()) teamA = String(node.benchA).trim().toUpperCase();
+            if (node.benchB && String(node.benchB).trim()) teamB = String(node.benchB).trim().toUpperCase();
+            if (teamA !== 'TEAM A' && teamB !== 'TEAM B') return;
+            for (const k of Object.keys(node)) {
+              if (typeof node[k] === 'object' && node[k] !== null) findBenches(node[k]);
+            }
+          }
+          findBenches(rootData);
+
+          const derived = deriveTeamNames(extracted, teamA, teamB);
+          return { players: extracted, teamA: derived.teamA, teamB: derived.teamB, error: null };
+        }
+      }
+    } catch (e) {
+      console.warn('SDK RTDB root fetch warning:', e);
+    }
+  }
+
+  // 3. Direct fetch from URL (legacy HTTP fallback)
   const dbUrl = "https://volley-hub-c90ca-default-rtdb.europe-west1.firebasedatabase.app";
   try {
     const response = await fetch(`${dbUrl}/.json`);
     if (response.ok) {
       const json = await response.json();
-      if (json) {
+      if (json && !json.error) {
         const extracted = parsePlayersFromJson(json);
         if (extracted.length > 0) {
-          return { players: extracted, teamA: 'TEAM A', teamB: 'TEAM B', error: null };
+          const derived = deriveTeamNames(extracted, 'TEAM A', 'TEAM B');
+          return { players: extracted, teamA: derived.teamA, teamB: derived.teamB, error: null };
         }
       }
     }
