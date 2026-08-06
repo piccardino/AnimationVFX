@@ -79,19 +79,26 @@ export default function PlayerFirebaseSelector({ user, onSelectPlayer, onOpenAut
   };
 
   // Filter players by selected team
+  const isMatchTeam = (playerTeam, targetTeam) => {
+    if (!playerTeam || !targetTeam) return false;
+    const pTag = String(playerTeam).trim().toUpperCase();
+    const tTag = String(targetTeam).trim().toUpperCase();
+    return pTag === tTag || pTag.includes(tTag) || tTag.includes(pTag);
+  };
+
   const filteredPlayers = players.filter((p) => {
     if (selectedTeamFilter === 'ALL') return true;
     if (selectedTeamFilter === 'TEAM_A') {
-      return String(p.team).toUpperCase() === String(teamNames.teamA).toUpperCase() || !p.team;
+      return isMatchTeam(p.team, teamNames.teamA) || !p.team;
     }
     if (selectedTeamFilter === 'TEAM_B') {
-      return String(p.team).toUpperCase() === String(teamNames.teamB).toUpperCase();
+      return isMatchTeam(p.team, teamNames.teamB);
     }
     return true;
   });
 
-  const teamAPlayers = players.filter((p) => String(p.team).toUpperCase() === String(teamNames.teamA).toUpperCase() || !p.team);
-  const teamBPlayers = players.filter((p) => String(p.team).toUpperCase() === String(teamNames.teamB).toUpperCase());
+  const teamAPlayers = players.filter((p) => isMatchTeam(p.team, teamNames.teamA) || !p.team);
+  const teamBPlayers = players.filter((p) => isMatchTeam(p.team, teamNames.teamB));
 
   return (
     <div className="firebase-player-selector-box">

@@ -268,11 +268,18 @@ function matchPlayerInRoster(tokenName, roster) {
   return null;
 }
 
-// Extract raw team name if present
-function extractTeamTag(p) {
-  if (!p) return null;
-  const raw = String(p.team || p.squadra || p.side || p.teamName || p.group || '').trim().toUpperCase();
-  if (raw) return raw;
+// Extract raw team name if present or infer from database path
+function extractTeamTag(p, path = '') {
+  if (p && typeof p === 'object') {
+    const raw = String(p.team || p.squadra || p.side || p.teamName || p.group || p.club || p.team_code || '').trim().toUpperCase();
+    if (raw) return raw;
+  }
+  if (path) {
+    const parts = String(path).toUpperCase().split(/[/._-]/);
+    for (const part of parts) {
+      if (part === 'VPM' || part === 'VHP' || part === 'VHU') return part;
+    }
+  }
   return null;
 }
 
@@ -310,7 +317,7 @@ export function parsePlayersFromJson(data) {
         name: String(name || 'PLAYER').toUpperCase(),
         number: String(number || '0'),
         role: normalizeRole(role),
-        team: extractTeamTag(node),
+        team: extractTeamTag(node, path),
         active: node.active !== false
       });
       return;
@@ -363,11 +370,29 @@ export async function fetchUserProfile(uid) {
 }
 
 // Helper to extract team names from player list if available
-function deriveTeamNames(players, defaultA = 'TEAM A', defaultB = 'TEAM B') {
+function deriveTeamNames(players, defaultA = 'VPM', defaultB = 'VHP') {
   if (!players || !Array.isArray(players)) return { teamA: defaultA, teamB: defaultB };
-  const teams = Array.from(new Set(players.map(p => p && p.team).filter(Boolean)));
-  const teamA = teams[0] || defaultA;
-  const teamB = teams[1] || defaultB;
+  const rawTeams = Array.from(new Set(players.map(p => p && p.team).filter(Boolean)));
+  
+  let teamA = defaultA;
+  let teamB = defaultB;
+
+  if (rawTeams.length >= 2) {
+    teamA = rawTeams[0];
+    teamB = rawTeams[1];
+  } else if (rawTeams.length === 1) {
+    teamA = rawTeams[0];
+    if (teamA === 'VPM') teamB = 'VHP';
+    else if (teamA === 'VHP' || teamA === 'VHU') teamB = 'VPM';
+  }
+
+  const hasVPM = rawTeams.find(t => t === 'VPM');
+  const hasVHP = rawTeams.find(t => t === 'VHP' || t === 'VHU');
+  if (hasVPM && hasVHP) {
+    teamA = 'VPM';
+    teamB = hasVHP;
+  }
+
   return { teamA, teamB };
 }
 
