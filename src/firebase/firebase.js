@@ -283,48 +283,69 @@ function extractTeamTag(p, path = '') {
   return null;
 }
 
+// Check if a node represents an individual player vs a container (team, match, user, list)
+function isPlayerNode(node) {
+  if (!node || typeof node !== 'object') return false;
+  // A container node contains child lists or structures
+  if (node.players || node.roster || node.giocatori || node.members || node.tokens || node.formation || node.matchData) {
+    return false;
+  }
+  const name = node.name || node.nome || node.fullname || node.giocatore || node.player || node.cognome;
+  const number = node.number || node.numero || node.maglia || node.jersey || node.n || node.num;
+  const role = node.role || node.ruolo || node.posizione || node.position;
+
+  if (!name && !(number && role)) return false;
+
+  // Avoid matching team / match container name as a player name
+  const nStr = String(name || '').trim().toLowerCase();
+  if (nStr.includes('team') || nStr.includes('squadra') || nStr.includes('club') || nStr.includes('match') || nStr === 'vpm' || nStr === 'vhp' || nStr === 'vhu') {
+    if (!number && !role) return false;
+  }
+
+  return true;
+}
+
 // Parse players from Realtime Database array/object structure
 export function parsePlayersFromJson(data) {
   const players = [];
   if (!data) return players;
 
-  if (Array.isArray(data)) {
-    data.forEach((p, idx) => {
-      if (p && p.active !== false) {
-        players.push({
-          id: p.id || 'p_' + idx,
-          name: String(p.name || p.nome || p.giocatore || 'PLAYER').toUpperCase(),
-          number: String(p.number || p.numero || p.num || idx + 1),
-          role: normalizeRole(p.role || p.ruolo),
-          team: extractTeamTag(p),
-          active: p.active !== false
-        });
-      }
-    });
-    return players;
-  }
-
-  function scan(node, path = '') {
+  function scan(node, path = '', parentTeamTag = null) {
     if (!node || typeof node !== 'object') return;
 
-    const name = node.name || node.nome || node.fullname || node.giocatore || node.player || node.cognome;
-    const number = node.number || node.numero || node.maglia || node.jersey || node.n || node.num || node.id;
-    const role = node.role || node.ruolo || node.posizione || node.position;
+    let currentTeamTag = extractTeamTag(node, path) || parentTeamTag;
 
-    if ((name || number) && node.active !== false) {
+    if (node.name && (node.players || node.roster || node.giocatori)) {
+      currentTeamTag = String(node.name).trim().toUpperCase();
+    }
+
+    if (isPlayerNode(node) && node.active !== false) {
+      const name = node.name || node.nome || node.fullname || node.giocatore || node.player || node.cognome;
+      const number = node.number || node.numero || node.maglia || node.jersey || node.n || node.num || node.id;
+      const role = node.role || node.ruolo || node.posizione || node.position;
+
       players.push({
         id: path || 'p_' + Math.random().toString(36).substring(2, 9),
         name: String(name || 'PLAYER').toUpperCase(),
         number: String(number || '0'),
         role: normalizeRole(role),
-        team: extractTeamTag(node, path),
+        team: currentTeamTag,
         active: node.active !== false
       });
       return;
     }
 
-    for (const key of Object.keys(node)) {
-      scan(node[key], path ? `${path}/${key}` : key);
+    if (Array.isArray(node)) {
+      node.forEach((item, idx) => scan(item, path ? `${path}/${idx}` : `${idx}`, currentTeamTag));
+    } else {
+      for (const key of Object.keys(node)) {
+        let childTeam = currentTeamTag;
+        const keyUpper = key.toUpperCase();
+        if (keyUpper === 'VPM' || keyUpper === 'VHP' || keyUpper === 'VHU') {
+          childTeam = keyUpper;
+        }
+        scan(node[key], path ? `${path}/${key}` : key, childTeam);
+      }
     }
   }
 
@@ -408,8 +429,8 @@ export async function fetchPlayersFromFirebase(userId = null) {
       
       const allRoster = playersSnap.exists() ? parsePlayersFromJson(playersSnap.val()) : [];
       let activeFormationPlayers = [];
-      let teamNameA = 'TEAM A';
-      let teamNameB = 'TEAM B';
+      let teamNameA = 'VPM';
+      let teamNameB = 'VHP';
 
       if (formationSnap.exists()) {
         const fData = formationSnap.val();
@@ -470,34 +491,37 @@ export async function fetchPlayersFromFirebase(userId = null) {
     }
   }
 
-  // 2. Fallback: Query RTDB using the authenticated Firebase SDK (rtdb) instead of raw HTTP fetch
+  // 2. Fallback: Query RTDB using authenticated Firebase SDK (rtdb) over multiple candidate nodes
   if (rtdb) {
-    try {
-      const rootSnap = await get(ref(rtdb));
-      if (rootSnap.exists()) {
-        const rootData = rootSnap.val();
-        const extracted = parsePlayersFromJson(rootData);
-        if (extracted.length > 0) {
-          let teamA = 'TEAM A';
-          let teamB = 'TEAM B';
+    const candidatePaths = ['', 'users', 'players', 'matchData', 'teams', 'squadre'];
+    for (const p of candidatePaths) {
+      try {
+        const snap = p ? await get(child(ref(rtdb), p)) : await get(ref(rtdb));
+        if (snap.exists()) {
+          const snapData = snap.val();
+          const extracted = parsePlayersFromJson(snapData);
+          if (extracted.length > 0) {
+            let teamA = 'VPM';
+            let teamB = 'VHP';
 
-          function findBenches(node) {
-            if (!node || typeof node !== 'object') return;
-            if (node.benchA && String(node.benchA).trim()) teamA = String(node.benchA).trim().toUpperCase();
-            if (node.benchB && String(node.benchB).trim()) teamB = String(node.benchB).trim().toUpperCase();
-            if (teamA !== 'TEAM A' && teamB !== 'TEAM B') return;
-            for (const k of Object.keys(node)) {
-              if (typeof node[k] === 'object' && node[k] !== null) findBenches(node[k]);
+            function findBenches(node) {
+              if (!node || typeof node !== 'object') return;
+              if (node.benchA && String(node.benchA).trim()) teamA = String(node.benchA).trim().toUpperCase();
+              if (node.benchB && String(node.benchB).trim()) teamB = String(node.benchB).trim().toUpperCase();
+              if (teamA !== 'VPM' && teamB !== 'VHP') return;
+              for (const k of Object.keys(node)) {
+                if (typeof node[k] === 'object' && node[k] !== null) findBenches(node[k]);
+              }
             }
-          }
-          findBenches(rootData);
+            findBenches(snapData);
 
-          const derived = deriveTeamNames(extracted, teamA, teamB);
-          return { players: extracted, teamA: derived.teamA, teamB: derived.teamB, error: null };
+            const derived = deriveTeamNames(extracted, teamA, teamB);
+            return { players: extracted, teamA: derived.teamA, teamB: derived.teamB, error: null };
+          }
         }
+      } catch (e) {
+        console.warn(`SDK RTDB candidate path '${p}' fetch warning:`, e);
       }
-    } catch (e) {
-      console.warn('SDK RTDB root fetch warning:', e);
     }
   }
 
@@ -510,7 +534,7 @@ export async function fetchPlayersFromFirebase(userId = null) {
       if (json && !json.error) {
         const extracted = parsePlayersFromJson(json);
         if (extracted.length > 0) {
-          const derived = deriveTeamNames(extracted, 'TEAM A', 'TEAM B');
+          const derived = deriveTeamNames(extracted, 'VPM', 'VHP');
           return { players: extracted, teamA: derived.teamA, teamB: derived.teamB, error: null };
         }
       }
@@ -519,7 +543,7 @@ export async function fetchPlayersFromFirebase(userId = null) {
     // ignore
   }
 
-  return { players: [], teamA: 'TEAM A', teamB: 'TEAM B', error: 'No players found in DB' };
+  return { players: [], teamA: 'VPM', teamB: 'VHP', error: 'No players found in DB' };
 }
 
 // Add/Save player into users/{userId}/players in Realtime DB
