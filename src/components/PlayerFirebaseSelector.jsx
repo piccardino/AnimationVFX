@@ -115,6 +115,7 @@ export default function PlayerFirebaseSelector({ user, onSelectPlayer, onOpenAut
   };
 
   const filteredPlayers = players.filter((p) => {
+    if (p.active === false) return false;
     if (selectedTeamFilter === 'ALL') return true;
     if (selectedTeamFilter === 'TEAM_A') {
       return isMatchTeam(p.team, teamNames.teamA, 'A') || !p.team;
@@ -125,8 +126,8 @@ export default function PlayerFirebaseSelector({ user, onSelectPlayer, onOpenAut
     return true;
   });
 
-  const teamAPlayers = players.filter((p) => isMatchTeam(p.team, teamNames.teamA, 'A') || !p.team);
-  const teamBPlayers = players.filter((p) => isMatchTeam(p.team, teamNames.teamB, 'B'));
+  const teamAPlayers = players.filter((p) => p.active !== false && (isMatchTeam(p.team, teamNames.teamA, 'A') || !p.team));
+  const teamBPlayers = players.filter((p) => p.active !== false && isMatchTeam(p.team, teamNames.teamB, 'B'));
 
   return (
     <div className="firebase-player-selector-box">

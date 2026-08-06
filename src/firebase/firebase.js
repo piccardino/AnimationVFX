@@ -295,6 +295,8 @@ function processUserRosterAndFormation(uData) {
     fData.tokens.forEach((t, idx) => {
       if (t && t.name) {
         const matched = matchPlayerInRoster(t.name, rawRoster);
+        if (matched && matched.active === false) return; // Skip inactive players in roster
+
         const isTeamA = (t.team === 'team-a' || t.team === 'A' || t.team === 'TEAM-A' || String(t.team).toUpperCase() === teamNameA);
         const teamCode = isTeamA ? teamNameA : teamNameB;
 
@@ -319,9 +321,10 @@ function processUserRosterAndFormation(uData) {
     });
   }
 
-  // Include remaining roster players not in formation, assigning team if missing
+  // Include remaining roster players not in formation, strictly if active !== false
   if (rawRoster.length > 0) {
     rawRoster.forEach((r, idx) => {
+      if (r.active === false) return; // Skip inactive players
       if (!activeFormationPlayers.some(ap => ap.name === r.name)) {
         const defaultTeam = idx % 2 === 0 ? teamNameA : teamNameB;
         const assignedTeam = normalizePlayerTeam(r.team, teamNameA, teamNameB, defaultTeam);
@@ -333,8 +336,10 @@ function processUserRosterAndFormation(uData) {
     });
   }
 
-  if (activeFormationPlayers.length > 0) {
-    return { players: activeFormationPlayers, teamA: teamNameA, teamB: teamNameB };
+  const onlyActive = activeFormationPlayers.filter(p => p.active !== false);
+
+  if (onlyActive.length > 0) {
+    return { players: onlyActive, teamA: teamNameA, teamB: teamNameB };
   }
   return null;
 }
