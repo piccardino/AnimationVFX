@@ -25,7 +25,7 @@ export default function PlayerFirebaseSelector({ user, onSelectPlayer, onOpenAut
   const loadPlayers = async () => {
     setLoading(true);
     setStatusMsg('');
-    const res = await fetchPlayersFromFirebase(user ? user.uid : null);
+    const res = await fetchPlayersFromFirebase(user ? user.uid : null, user ? user.email : null);
     setLoading(false);
 
     if (res.teamA) {

@@ -280,11 +280,58 @@ function processUserRosterAndFormation(uData) {
   return null;
 }
 
+// Helper to search across user nodes for matching email/username or node with most roster players
+function findBestUserNodeInUsers(usersObj, targetEmail = null, targetUserId = null) {
+  if (!usersObj || typeof usersObj !== 'object') return null;
+
+  const emailClean = targetEmail ? String(targetEmail).trim().toLowerCase() : '';
+  const emailPrefix = emailClean ? emailClean.split('@')[0] : '';
+
+  let exactMatch = null;
+  let prefixMatch = null;
+  let maxPlayerMatch = null;
+  let maxPlayerCount = -1;
+
+  for (const uid of Object.keys(usersObj)) {
+    const uData = usersObj[uid];
+    if (!uData || typeof uData !== 'object') continue;
+
+    const res = processUserRosterAndFormation(uData);
+    if (!res || !res.players || res.players.length === 0) continue;
+
+    const profEmail = String(uData.profile?.email || '').trim().toLowerCase();
+    const profName = String(uData.profile?.name || uData.profile?.username || '').trim().toLowerCase();
+
+    // Exact UID match
+    if (targetUserId && uid === targetUserId) {
+      return res;
+    }
+
+    // Exact email match
+    if (emailClean && profEmail === emailClean) {
+      exactMatch = res;
+    }
+
+    // Username / Email prefix match (e.g. "zeuspiccardinoo")
+    if (emailPrefix && (profEmail.includes(emailPrefix) || profName.includes(emailPrefix) || emailPrefix.includes(profName))) {
+      prefixMatch = res;
+    }
+
+    // Track user node with most players
+    if (res.players.length > maxPlayerCount) {
+      maxPlayerCount = res.players.length;
+      maxPlayerMatch = res;
+    }
+  }
+
+  return exactMatch || prefixMatch || maxPlayerMatch;
+}
+
 // Fetch active match formation & roster from Realtime DB
-export async function fetchPlayersFromFirebase(userId = null) {
+export async function fetchPlayersFromFirebase(userId = null, userEmail = null) {
   if (!rtdb) initFirebase();
 
-  // 1. Try fetching logged-in user's custom formation & roster
+  // 1. Try fetching logged-in user's custom node by userId
   if (userId && rtdb) {
     try {
       const userSnap = await get(child(ref(rtdb), `users/${userId}`));
@@ -299,19 +346,15 @@ export async function fetchPlayersFromFirebase(userId = null) {
     }
   }
 
-  // 2. Fallback: Query RTDB using authenticated Firebase SDK across all user accounts in 'users'
+  // 2. Scan all user accounts in 'users' matching user's email/username or node with most roster players
   if (rtdb) {
     try {
       const usersSnap = await get(child(ref(rtdb), 'users'));
       if (usersSnap.exists()) {
         const usersObj = usersSnap.val();
-        if (usersObj && typeof usersObj === 'object') {
-          for (const uid of Object.keys(usersObj)) {
-            const res = processUserRosterAndFormation(usersObj[uid]);
-            if (res && res.players.length > 0) {
-              return { ...res, error: null };
-            }
-          }
+        const bestRes = findBestUserNodeInUsers(usersObj, userEmail, userId);
+        if (bestRes && bestRes.players.length > 0) {
+          return { ...bestRes, error: null };
         }
       }
     } catch (e) {
@@ -324,11 +367,9 @@ export async function fetchPlayersFromFirebase(userId = null) {
       if (rootSnap.exists()) {
         const rootVal = rootSnap.val();
         if (rootVal && rootVal.users) {
-          for (const uid of Object.keys(rootVal.users)) {
-            const res = processUserRosterAndFormation(rootVal.users[uid]);
-            if (res && res.players.length > 0) {
-              return { ...res, error: null };
-            }
+          const bestRes = findBestUserNodeInUsers(rootVal.users, userEmail, userId);
+          if (bestRes && bestRes.players.length > 0) {
+            return { ...bestRes, error: null };
           }
         }
         const extracted = parsePlayersFromJson(rootVal);
@@ -342,7 +383,7 @@ export async function fetchPlayersFromFirebase(userId = null) {
     }
   }
 
-  // 4. Sample Fallback Players if DB has no data
+  // 4. Sample Fallback Players if DB is completely empty
   const SAMPLE_PLAYERS = [
     { id: 'p1', name: 'MARCO ZANGHERI', number: '7', role: 'OUTSIDE HITTER', team: 'VPM', active: true },
     { id: 'p2', name: 'GIANLUCA GALASSI', number: '11', role: 'MIDDLE BLOCKER', team: 'VPM', active: true },
