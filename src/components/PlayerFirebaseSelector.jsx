@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Database, UserCheck, RefreshCw } from 'lucide-react';
-import { fetchPlayersFromFirebase } from '../firebase/firebase';
+import { fetchPlayersFromFirebase, subscribeToPlayersFromFirebase } from '../firebase/firebase';
 
 const TEAM_COLOR_SCHEMES = {
   A: { primary: '#00f0ff', secondary: '#7000ff', badge: '🔵' },
@@ -8,48 +8,33 @@ const TEAM_COLOR_SCHEMES = {
 };
 
 const SAMPLE_FALLBACK_PLAYERS = [
-  { id: 'p1', name: 'MARCO ZANGHERI', number: '7', role: 'OUTSIDE HITTER', team: 'TEAM A' },
-  { id: 'p2', name: 'GIANLUCA GALASSI', number: '11', role: 'MIDDLE BLOCKER', team: 'TEAM A' },
-  { id: 'p3', name: 'SIMONE GIANNELLI', number: '6', role: 'SETTER', team: 'TEAM A' },
-  { id: 'p4', name: 'FABIO BALASO', number: '14', role: 'LIBERO', team: 'TEAM B' },
-  { id: 'p5', name: 'YURI ROMANÒ', number: '16', role: 'OPPOSITE', team: 'TEAM B' },
+  { id: 'p1', name: 'MARCO ZANGHERI', number: '7', role: 'OUTSIDE HITTER', team: 'VPM' },
+  { id: 'p2', name: 'GIANLUCA GALASSI', number: '11', role: 'MIDDLE BLOCKER', team: 'VPM' },
+  { id: 'p3', name: 'SIMONE GIANNELLI', number: '6', role: 'SETTER', team: 'VPM' },
+  { id: 'p4', name: 'FABIO BALASO', number: '14', role: 'LIBERO', team: 'VHP' },
+  { id: 'p5', name: 'YURI ROMANÒ', number: '16', role: 'OPPOSITE', team: 'VHP' },
 ];
 
 export default function PlayerFirebaseSelector({ user, onSelectPlayer, onOpenAuth }) {
   const [players, setPlayers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [selectedTeamFilter, setSelectedTeamFilter] = useState('ALL'); // 'ALL' | 'TEAM_A' | 'TEAM_B'
-  const [teamNames, setTeamNames] = useState({ teamA: 'TEAM A', teamB: 'TEAM B' });
+  const [teamNames, setTeamNames] = useState({ teamA: 'VPM', teamB: 'VHP' });
   const [statusMsg, setStatusMsg] = useState('');
 
-  const loadPlayers = async () => {
+  const loadPlayersManual = async () => {
     setLoading(true);
     setStatusMsg('');
     const res = await fetchPlayersFromFirebase(user ? user.uid : null, user ? user.email : null);
     setLoading(false);
 
-    if (res.teamA) {
+    if (res && res.teamA) {
       setTeamNames({ teamA: res.teamA, teamB: res.teamB });
     }
 
-    if (res.players && res.players.length > 0) {
+    if (res && res.players && res.players.length > 0) {
       setPlayers(res.players);
-      setStatusMsg(user ? `Active roster ${res.teamA} & ${res.teamB} loaded for ${user.email.split('@')[0]}!` : `${res.players.length} active players on court!`);
-
-      // Automatically select 1st player on load for Player Spotlight Card
-      const firstP = res.players[0];
-      const isTeamB = String(firstP.team).toUpperCase() === String((res.teamB || teamNames.teamB)).toUpperCase();
-      const palette = isTeamB ? TEAM_COLOR_SCHEMES.B : TEAM_COLOR_SCHEMES.A;
-      if (onSelectPlayer) {
-        onSelectPlayer({
-          name: firstP.name,
-          number: firstP.number,
-          role: firstP.role,
-          team: firstP.team || res.teamA || teamNames.teamA,
-          primaryColor: palette.primary,
-          secondaryColor: palette.secondary
-        });
-      }
+      setStatusMsg(user ? `Active roster ${res.teamA} & ${res.teamB} loaded!` : `${res.players.length} active players!`);
     } else {
       setPlayers(SAMPLE_FALLBACK_PLAYERS);
       setStatusMsg('Demo roster loaded.');
@@ -57,14 +42,52 @@ export default function PlayerFirebaseSelector({ user, onSelectPlayer, onOpenAut
   };
 
   useEffect(() => {
-    loadPlayers();
+    setLoading(true);
+    setStatusMsg('Connecting to Realtime DB...');
+
+    const unsubscribe = subscribeToPlayersFromFirebase(
+      user ? user.uid : null,
+      user ? user.email : null,
+      (res) => {
+        setLoading(false);
+        if (res && res.teamA) {
+          setTeamNames({ teamA: res.teamA, teamB: res.teamB });
+        }
+
+        if (res && res.players && res.players.length > 0) {
+          setPlayers(res.players);
+          setStatusMsg(user ? `Sync: ${res.teamA} vs ${res.teamB}` : `${res.players.length} players synced!`);
+
+          // Select first player if none selected yet
+          const firstP = res.players[0];
+          const isTeamB = isMatchTeam(firstP.team, res.teamB, 'B');
+          const palette = isTeamB ? TEAM_COLOR_SCHEMES.B : TEAM_COLOR_SCHEMES.A;
+          if (onSelectPlayer) {
+            onSelectPlayer({
+              name: firstP.name,
+              number: firstP.number,
+              role: firstP.role,
+              team: firstP.team || res.teamA,
+              primaryColor: palette.primary,
+              secondaryColor: palette.secondary
+            });
+          }
+        } else {
+          setPlayers(SAMPLE_FALLBACK_PLAYERS);
+          setTeamNames({ teamA: 'VPM', teamB: 'VHP' });
+          setStatusMsg('Demo roster loaded.');
+        }
+      }
+    );
+
+    return () => unsubscribe();
   }, [user]);
 
   const handleSelect = (e) => {
     const selectedId = e.target.value;
     const player = players.find((p) => p.id === selectedId);
     if (player && onSelectPlayer) {
-      const isTeamB = String(player.team).toUpperCase() === String(teamNames.teamB).toUpperCase();
+      const isTeamB = isMatchTeam(player.team, teamNames.teamB, 'B');
       const palette = isTeamB ? TEAM_COLOR_SCHEMES.B : TEAM_COLOR_SCHEMES.A;
 
       onSelectPlayer({
@@ -78,27 +101,32 @@ export default function PlayerFirebaseSelector({ user, onSelectPlayer, onOpenAut
     }
   };
 
-  // Filter players by selected team
-  const isMatchTeam = (playerTeam, targetTeam) => {
-    if (!playerTeam || !targetTeam) return false;
+  // Robust check for team matching
+  const isMatchTeam = (playerTeam, targetTeamName, teamIndex) => {
+    if (!playerTeam) return false;
     const pTag = String(playerTeam).trim().toUpperCase();
-    const tTag = String(targetTeam).trim().toUpperCase();
-    return pTag === tTag || pTag.includes(tTag) || tTag.includes(pTag);
+    const tTag = String(targetTeamName || '').trim().toUpperCase();
+
+    if (tTag && (pTag === tTag || pTag.includes(tTag) || tTag.includes(pTag))) return true;
+    if (teamIndex === 'A' && (pTag === 'TEAM-A' || pTag === 'TEAM_A' || pTag === 'A' || pTag === 'VPM')) return true;
+    if (teamIndex === 'B' && (pTag === 'TEAM-B' || pTag === 'TEAM_B' || pTag === 'B' || pTag === 'VHP')) return true;
+
+    return false;
   };
 
   const filteredPlayers = players.filter((p) => {
     if (selectedTeamFilter === 'ALL') return true;
     if (selectedTeamFilter === 'TEAM_A') {
-      return isMatchTeam(p.team, teamNames.teamA) || !p.team;
+      return isMatchTeam(p.team, teamNames.teamA, 'A') || !p.team;
     }
     if (selectedTeamFilter === 'TEAM_B') {
-      return isMatchTeam(p.team, teamNames.teamB);
+      return isMatchTeam(p.team, teamNames.teamB, 'B');
     }
     return true;
   });
 
-  const teamAPlayers = players.filter((p) => isMatchTeam(p.team, teamNames.teamA) || !p.team);
-  const teamBPlayers = players.filter((p) => isMatchTeam(p.team, teamNames.teamB));
+  const teamAPlayers = players.filter((p) => isMatchTeam(p.team, teamNames.teamA, 'A') || !p.team);
+  const teamBPlayers = players.filter((p) => isMatchTeam(p.team, teamNames.teamB, 'B'));
 
   return (
     <div className="firebase-player-selector-box">
@@ -156,7 +184,7 @@ export default function PlayerFirebaseSelector({ user, onSelectPlayer, onOpenAut
           <select onChange={handleSelect} className="input-text" defaultValue="">
             <option value="" disabled>-- Choose a player on court --</option>
             {filteredPlayers.map((p) => {
-              const isTeamB = String(p.team).toUpperCase() === String(teamNames.teamB).toUpperCase();
+              const isTeamB = isMatchTeam(p.team, teamNames.teamB, 'B');
               const teamTag = isTeamB ? `🔴 ${teamNames.teamB}` : `🔵 ${teamNames.teamA}`;
               return (
                 <option key={p.id} value={p.id}>
@@ -166,7 +194,7 @@ export default function PlayerFirebaseSelector({ user, onSelectPlayer, onOpenAut
             })}
           </select>
 
-          <button onClick={loadPlayers} className="btn-icon-md" title="Reload from Firebase DB">
+          <button onClick={loadPlayersManual} className="btn-icon-md" title="Reload from Firebase DB">
             <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
           </button>
         </div>

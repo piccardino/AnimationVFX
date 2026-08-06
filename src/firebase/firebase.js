@@ -16,7 +16,8 @@ import {
   ref,
   get,
   child,
-  set
+  set,
+  onValue
 } from 'firebase/database';
 
 // Configured through the Firebase console for Volley Hub Pro (volley-hub-c90ca)
@@ -217,6 +218,63 @@ export function subscribeToAuth(callback) {
   }
 }
 
+// Helper utilities for roster and role parsing
+function parsePlayersFromJson(playersData) {
+  if (!playersData) return [];
+  let list = [];
+  if (Array.isArray(playersData)) {
+    list = playersData;
+  } else if (typeof playersData === 'object') {
+    list = Object.values(playersData);
+  }
+  return list.filter(p => p && typeof p === 'object' && p.name).map((p, idx) => ({
+    id: p.id || 'p_' + idx,
+    name: String(p.name).trim().toUpperCase(),
+    number: p.number ? String(p.number) : String(idx + 1),
+    role: normalizeRole(p.role),
+    team: p.team || null,
+    active: p.active !== false
+  }));
+}
+
+function normalizeRole(role) {
+  if (!role) return 'OUTSIDE HITTER';
+  const r = String(role).trim();
+  const lower = r.toLowerCase();
+
+  if (lower.includes('palleggi') || lower.includes('setter') || r === 'P') return 'SETTER';
+  if (lower.includes('central') || lower.includes('middle') || r === 'C' || r === 'MB') return 'MIDDLE BLOCKER';
+  if (lower.includes('schiaccia') || lower.includes('outside') || lower.includes('banda') || r === 'S' || r === 'OH') return 'OUTSIDE HITTER';
+  if (lower.includes('oppost') || lower.includes('opposite') || r === 'O' || r === 'OPP') return 'OPPOSITE';
+  if (lower.includes('libero') || r === 'L') return 'LIBERO';
+  if (lower.includes('univ') || r === 'U') return 'UNIVERSAL';
+
+  return r.toUpperCase();
+}
+
+function matchPlayerInRoster(name, roster) {
+  if (!name || !Array.isArray(roster)) return null;
+  const target = String(name).trim().toUpperCase();
+  return roster.find(p => p.name && (p.name.toUpperCase() === target || p.name.toUpperCase().includes(target) || target.includes(p.name.toUpperCase())));
+}
+
+function deriveTeamNames(players, defaultA = 'VPM', defaultB = 'VHP') {
+  if (!Array.isArray(players) || players.length === 0) return { teamA: defaultA, teamB: defaultB };
+  const teams = Array.from(new Set(players.map(p => p.team).filter(Boolean)));
+  return {
+    teamA: teams[0] ? String(teams[0]).toUpperCase() : defaultA,
+    teamB: teams[1] ? String(teams[1]).toUpperCase() : defaultB
+  };
+}
+
+function normalizePlayerTeam(teamVal, teamNameA, teamNameB, defaultTeam) {
+  if (!teamVal) return defaultTeam;
+  const t = String(teamVal).trim().toUpperCase();
+  if (t === 'TEAM-A' || t === 'TEAM_A' || t === 'A' || t === '1' || t === teamNameA) return teamNameA;
+  if (t === 'TEAM-B' || t === 'TEAM_B' || t === 'B' || t === '2' || t === teamNameB) return teamNameB;
+  return t;
+}
+
 // Helper to process user data node (formation + players roster)
 function processUserRosterAndFormation(uData) {
   if (!uData || typeof uData !== 'object') return null;
@@ -237,7 +295,7 @@ function processUserRosterAndFormation(uData) {
     fData.tokens.forEach((t, idx) => {
       if (t && t.name) {
         const matched = matchPlayerInRoster(t.name, rawRoster);
-        const isTeamA = (t.team === 'team-a' || t.team === 'A' || String(t.team).toUpperCase() === teamNameA);
+        const isTeamA = (t.team === 'team-a' || t.team === 'A' || t.team === 'TEAM-A' || String(t.team).toUpperCase() === teamNameA);
         const teamCode = isTeamA ? teamNameA : teamNameB;
 
         let resolvedRole = 'OUTSIDE HITTER';
@@ -265,7 +323,8 @@ function processUserRosterAndFormation(uData) {
   if (rawRoster.length > 0) {
     rawRoster.forEach((r, idx) => {
       if (!activeFormationPlayers.some(ap => ap.name === r.name)) {
-        const assignedTeam = r.team || (idx % 2 === 0 ? teamNameA : teamNameB);
+        const defaultTeam = idx % 2 === 0 ? teamNameA : teamNameB;
+        const assignedTeam = normalizePlayerTeam(r.team, teamNameA, teamNameB, defaultTeam);
         activeFormationPlayers.push({
           ...r,
           team: assignedTeam
@@ -302,7 +361,7 @@ function findBestUserNodeInUsers(usersObj, targetEmail = null, targetUserId = nu
     const profEmail = String(uData.profile?.email || '').trim().toLowerCase();
     const profName = String(uData.profile?.name || uData.profile?.username || '').trim().toLowerCase();
 
-    // Exact UID match
+    // Exact UID match with valid players
     if (targetUserId && uid === targetUserId) {
       return res;
     }
@@ -327,7 +386,7 @@ function findBestUserNodeInUsers(usersObj, targetEmail = null, targetUserId = nu
   return exactMatch || prefixMatch || maxPlayerMatch;
 }
 
-// Fetch active match formation & roster from Realtime DB
+// Fetch active match formation & roster from Realtime DB (one-time fetch)
 export async function fetchPlayersFromFirebase(userId = null, userEmail = null) {
   if (!rtdb) initFirebase();
 
@@ -392,6 +451,54 @@ export async function fetchPlayersFromFirebase(userId = null, userEmail = null) 
     { id: 'p5', name: 'YURI ROMANÒ', number: '16', role: 'OPPOSITE', team: 'VHP', active: true },
   ];
   return { players: SAMPLE_PLAYERS, teamA: 'VPM', teamB: 'VHP', error: null };
+}
+
+// Subscribe to active match formation & roster changes from Realtime DB in real time
+export function subscribeToPlayersFromFirebase(userId = null, userEmail = null, callback = () => {}) {
+  if (!rtdb) initFirebase();
+  if (!rtdb) return () => {};
+
+  const targetPath = userId ? `users/${userId}` : 'users';
+  const targetRef = ref(rtdb, targetPath);
+
+  const unsubscribe = onValue(targetRef, (snapshot) => {
+    if (!snapshot.exists()) {
+      fetchPlayersFromFirebase(userId, userEmail).then(res => callback(res));
+      return;
+    }
+
+    const val = snapshot.val();
+    if (userId) {
+      const res = processUserRosterAndFormation(val);
+      if (res && res.players && res.players.length > 0) {
+        callback({ ...res, error: null });
+        return;
+      }
+      // If user's specific node has no players yet, scan all users
+      get(ref(rtdb, 'users')).then(usersSnap => {
+        if (usersSnap.exists()) {
+          const bestRes = findBestUserNodeInUsers(usersSnap.val(), userEmail, userId);
+          if (bestRes && bestRes.players && bestRes.players.length > 0) {
+            callback({ ...bestRes, error: null });
+            return;
+          }
+        }
+        fetchPlayersFromFirebase(null, userEmail).then(fallbackRes => callback(fallbackRes));
+      });
+    } else {
+      const bestRes = findBestUserNodeInUsers(val, userEmail, userId);
+      if (bestRes && bestRes.players && bestRes.players.length > 0) {
+        callback({ ...bestRes, error: null });
+        return;
+      }
+      fetchPlayersFromFirebase(null, userEmail).then(fallbackRes => callback(fallbackRes));
+    }
+  }, (err) => {
+    console.warn('Realtime DB subscription warning:', err);
+    fetchPlayersFromFirebase(userId, userEmail).then(res => callback(res));
+  });
+
+  return unsubscribe;
 }
 
 // Add/Save player into users/{userId}/players in Realtime DB
