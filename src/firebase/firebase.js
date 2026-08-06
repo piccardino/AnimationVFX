@@ -21,19 +21,18 @@ import {
 
 // Configured through the Firebase console: Google Cloud Console -> APIs & Services -> Credentials
 const defaultFirebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyDVFrN-OOzEvzcsNrtYn_6HhIDF6dXtYJ4",
-  authDomain: "volley-hub-c90ca.firebaseapp.com",
-  databaseURL: "https://volley-hub-c90ca-default-rtdb.europe-west1.firebasedatabase.app",
-  projectId: "volley-hub-c90ca",
-  storageBucket: "volley-hub-c90ca.firebasestorage.app",
-  messagingSenderId: "614392919865",
-  appId: "1:614392919865:web:f1273d14c2159b67089ae8",
-  measurementId: "G-457ZV7RM43"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY || "AIzaSyAjAH6HLTXIxShC5ZWhksf-f6r-f8OJL7A",
+  authDomain: "animationvfxvolley.firebaseapp.com",
+  projectId: "animationvfxvolley",
+  storageBucket: "animationvfxvolley.firebasestorage.app",
+  messagingSenderId: "854912253257",
+  appId: "1:854912253257:web:bd76e62d2e18ee14dcee98",
+  measurementId: "G-7ZLN7VNDEM"
 };
 
 // Bump this whenever defaultFirebaseConfig changes (e.g. after rotating the API key) so that a
 // stale config previously saved in localStorage can never shadow the new one.
-const FIREBASE_CONFIG_VERSION = 2;
+const FIREBASE_CONFIG_VERSION = 3;
 
 export function getStoredFirebaseConfig() {
   const saved = localStorage.getItem('volley_firebase_config');
