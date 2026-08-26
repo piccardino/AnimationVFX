@@ -1,146 +1,101 @@
-// VFX renderer: Super Spike
+// Super Spike — speed lines, ball strike and split-panel reveal
 import {
-  drawSubtitleBadge, TITLE_FONT,
-  easeOutCubic, enterExit,
-} from '../renderUtils';
+  sc, phase, clamp01, quintOut,
+  slab, kineticTitle, volleyball, tracked,
+  SURFACE,
+} from '../broadcastKit';
 
 export function renderSuperSpike(ctx, w, h, t, cfg) {
-  const p = cfg.primaryColor || '#ff3d00';
-  const s = cfg.secondaryColor || '#ffea00';
-  const a = cfg.accentColor || '#ffffff';
+  const k = sc(w, h);
+  const P = cfg.primaryColor || '#FF3D00';
+  const S2 = cfg.secondaryColor || '#FFEA00';
   const main = cfg.mainText || 'SUPER SPIKE!';
-  const sub = cfg.subText || '';
-  const ls = Math.min(1.4, Math.max(0.6, (cfg.lineThickness ?? 0.8) * 1.25));
   const cx = w / 2;
   const cy = h / 2;
-  const min = Math.min(w, h);
-  const { alpha, scale } = enterExit(t, { inEnd: 0.18, outStart: 0.82 });
+  const { outA } = phase(t, { outS: 0.86 });
 
-  // Heat haze aura
   ctx.save();
-  ctx.globalAlpha = alpha;
-  const auraR = min * (0.28 + Math.sin(t * 9) * 0.02);
-  const aura = ctx.createRadialGradient(cx, cy, 0, cx, cy, auraR);
-  aura.addColorStop(0, `${p}44`);
-  aura.addColorStop(0.7, `${s}18`);
-  aura.addColorStop(1, 'transparent');
-  ctx.fillStyle = aura;
-  ctx.fillRect(0, 0, w, h);
+  ctx.globalAlpha = outA;
 
-  // Incoming fireball streak before impact
-  if (t < 0.3) {
-    const ft = Math.min(1, t / 0.3);
-    for (let i = 0; i < 7; i++) {
-      const tr = i / 7;
-      const headX = cx + (1 - easeOutCubic(ft)) * min * 0.85 - tr * min * 0.22;
-      const headY = cy - (1 - easeOutCubic(ft)) * min * 0.55 + tr * min * 0.15;
-      const r = min * 0.055 * (1 - tr * 0.8);
-      const g = ctx.createRadialGradient(headX, headY, 0, headX, headY, r);
-      g.addColorStop(0, i === 0 ? s : p);
-      g.addColorStop(1, 'transparent');
-      ctx.globalAlpha = alpha * Math.min(1, ft * 3);
-      ctx.fillStyle = g;
-      ctx.beginPath();
-      ctx.arc(headX, headY, r, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  }
-  ctx.restore();
-
-  // Detonation shockwave ring
-  ctx.save();
-  if (t > 0.12) {
-    const bt = (t - 0.12) / 0.75;
-    if (bt < 1) {
-      ctx.globalAlpha = alpha * (1 - bt) * 0.85;
-      const br = min * (0.05 + bt * 0.45);
-      const rg = ctx.createRadialGradient(cx, cy, br * 0.6, cx, cy, br);
-      rg.addColorStop(0, 'transparent');
-      rg.addColorStop(0.5, s);
-      rg.addColorStop(0.85, p);
-      rg.addColorStop(1, 'transparent');
-      ctx.fillStyle = rg;
-      ctx.beginPath();
-      ctx.arc(cx, cy, br, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  }
-
-  // Speed streaks + rising embers
-  ctx.translate(cx, cy);
-  ctx.globalAlpha = alpha * 0.85;
-  ctx.strokeStyle = p;
-  ctx.lineWidth = Math.max(1, 1.8 * ls);
-  ctx.shadowColor = s;
-  ctx.shadowBlur = 10 * ls;
-  for (let i = 0; i < 16; i++) {
-    const ang = (i / 16) * Math.PI * 2 + t * 0.4;
-    const r1 = min * 0.08 + ((t * 40) % 22);
-    const r2 = r1 + 30 + Math.sin(i * 5 + t * 20) * 18;
-    ctx.beginPath();
-    ctx.moveTo(Math.cos(ang) * r1, Math.sin(ang) * r1);
-    ctx.lineTo(Math.cos(ang) * r2, Math.sin(ang) * r2);
-    ctx.stroke();
-  }
-  for (let i = 0; i < 24; i++) {
-    const ang = (i / 24) * Math.PI * 2 + Math.sin(i * 17) * 0.5;
-    const dist = ((t * 380 + i * 17) % 260) + 38;
-    const ex = Math.cos(ang) * dist;
-    const ey = Math.sin(ang) * dist - t * 42;
-    ctx.beginPath();
-    ctx.arc(ex, ey, Math.max(1.5, (2 + Math.sin(i + t * 14)) * ls), 0, Math.PI * 2);
-    ctx.fillStyle = i % 3 === 0 ? a : i % 2 === 0 ? s : p;
-    ctx.shadowColor = p;
-    ctx.shadowBlur = 8 * ls;
-    ctx.fill();
-  }
-  ctx.restore();
-
-  // Title block
-  ctx.save();
-  ctx.translate(cx, cy);
-  ctx.scale(scale, scale);
-  ctx.globalAlpha = alpha;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.font = `900 ${Math.round(min * 0.07)}px ${TITLE_FONT}`;
-  ctx.fillStyle = s;
-  ctx.fillText('🔥💥🔥', 0, -h * 0.135);
-
-  const fs = fitLocal(ctx, main, w * 0.58, Math.min(w * 0.072, 68));
-  ctx.font = `900 ${fs}px ${TITLE_FONT}`;
-  ctx.fillStyle = '#000';
-  ctx.fillText(main, 4, 4);
-  const fireGrad = ctx.createLinearGradient(0, -fs, 0, fs);
-  fireGrad.addColorStop(0, '#ffffff');
-  fireGrad.addColorStop(0.25, s);
-  fireGrad.addColorStop(0.65, p);
-  fireGrad.addColorStop(1, '#660000');
-  ctx.fillStyle = fireGrad;
-  ctx.fillText(main, 0, 0);
-  ctx.strokeStyle = '#fff';
-  ctx.lineWidth = Math.max(1.2, 2.2 * ls);
-  ctx.strokeText(main, 0, 0);
-
-  drawSubtitleBadge(ctx, sub, fs * 0.6, w * 0.58, s, p, Math.min(w * 0.03, 26), ls);
-  ctx.restore();
-
-  // Impact flash
-  if (t >= 0.11 && t < 0.2) {
+  // Speed dash bands racing left
+  for (const [bandY, color] of [[cy - h * 0.31, P], [cy + h * 0.31, S2]]) {
     ctx.save();
-    ctx.globalAlpha = (1 - (t - 0.11) / 0.09) * 0.35 * alpha;
-    ctx.fillStyle = s;
-    ctx.fillRect(0, 0, w, h);
+    ctx.globalAlpha = outA * 0.13;
+    ctx.fillStyle = color;
+    const dash = 90 * k, gap = 70 * k, off = (t * 1500 * k) % (dash + gap);
+    for (let x = -dash - gap + off; x < w + dash; x += dash + gap) {
+      ctx.fillRect(x, bandY - 4 * k, dash, 8 * k);
+    }
     ctx.restore();
   }
-}
 
-function fitLocal(ctx, text, maxW, startSize) {
-  let size = startSize;
-  ctx.font = `900 ${size}px ${TITLE_FONT}`;
-  while (ctx.measureText(text).width > maxW && size > 12) {
-    size -= 1;
-    ctx.font = `900 ${size}px ${TITLE_FONT}`;
+  // Incoming ball with afterimages
+  const impT = 0.15;
+  const posAt = (tt) => {
+    const p = tt <= 0 ? 0 : quintOut(clamp01(tt / impT));
+    return [cx - w * 0.52 + w * 0.52 * p, cy - h * 0.10 + h * 0.10 * p - Math.sin(p * Math.PI) * 70 * k];
+  };
+  for (let i = 5; i >= 1; i--) {
+    const tt = t - i * 0.013;
+    if (tt <= 0 || tt > impT) continue;
+    const [ax, ay] = posAt(tt);
+    ctx.save();
+    ctx.globalAlpha = outA * 0.22 * (1 - i / 6);
+    ctx.fillStyle = P;
+    ctx.beginPath();
+    ctx.arc(ax, ay, 40 * k * (1 - i * 0.1), 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
   }
-  return size;
+  if (t <= impT + 0.02) {
+    const [bx, by] = posAt(t);
+    volleyball(ctx, bx, by, 46 * k, { k });
+  }
+
+  // Split panels clapping shut at impact, then opening to reveal the title
+  const clapP = quintOut(clamp01((t - impT) / 0.12));
+  const panelH = h * 0.155;
+  const skew = 26 * k;
+  if (clapP > 0) {
+    const slide = (1 - clapP) * w;
+    slab(ctx, -w + slide, cy - panelH - 8 * k, w + skew, panelH, skew, SURFACE, { k, line: 'rgba(255,255,255,0.08)', lw: 1.5 });
+    slab(ctx, w - slide, cy + 8 * k, w + skew, panelH, skew, SURFACE, { k, line: 'rgba(255,255,255,0.08)', lw: 1.5 });
+    ctx.fillStyle = P;
+    ctx.fillRect(0, cy - 8 * k - 5 * k, w * clapP, 5 * k);
+    ctx.fillStyle = S2;
+    ctx.fillRect(w - w * clapP, cy + 8 * k, w * clapP, 5 * k);
+  }
+
+  // Radial sparks on impact
+  if (t > impT && t < impT + 0.3) {
+    const d = (t - impT) / 0.3;
+    ctx.save();
+    ctx.globalAlpha = outA * (1 - d);
+    ctx.strokeStyle = S2;
+    ctx.lineWidth = 4 * k;
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2 + 0.4;
+      const r1 = (60 + d * 160) * k;
+      ctx.beginPath();
+      ctx.moveTo(cx + Math.cos(a) * r1, cy + Math.sin(a) * r1);
+      ctx.lineTo(cx + Math.cos(a) * (r1 + 70 * k), cy + Math.sin(a) * (r1 + 70 * k));
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // Title + live speed ticker
+  const fs = kineticTitle(ctx, main, cx, cy, {
+    k, t, start: impT + 0.1, stagger: 0.024, maxW: w * 0.72,
+    size: Math.min(w * 0.064, 76 * k),
+    grad: [[0, '#FFFFFF'], [0.55, '#FFE9A8'], [1, P]],
+  });
+  const spd = Math.floor(115 * quintOut(clamp01((t - impT - 0.16) / 0.5)));
+  if (spd > 0) {
+    tracked(ctx, `${spd} KM/H`, cx, cy + fs * 0.72, {
+      k, size: 30 * k, color: S2, track: 6, align: 'center', weight: '900',
+    });
+  }
+
+  ctx.restore();
 }

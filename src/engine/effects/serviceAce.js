@@ -1,140 +1,167 @@
-// VFX renderer: Service Ace
+// Service Ace — targeting HUD lock-on with serve trajectory and ace ticker
 import {
-  drawSubtitleBadge, fitFontSize, TITLE_FONT,
-  easeOutExpo, enterExit, frameRandom,
-} from '../renderUtils';
+  sc, phase, clamp01, quintOut,
+  slab, kineticTitle, chip, volleyball, tracked,
+  SURFACE, WHITE,
+} from '../broadcastKit';
 
 export function renderServiceAce(ctx, w, h, t, cfg) {
-  const p = cfg.primaryColor || '#ffd700';
-  const s = cfg.secondaryColor || '#ff007f';
-  const a = cfg.accentColor || '#ffffff';
+  const k = sc(w, h);
+  const P = cfg.primaryColor || '#FFD700';
+  const S2 = cfg.secondaryColor || '#FF007F';
   const main = cfg.mainText || 'SERVICE ACE!';
   const sub = cfg.subText || '';
-  const ls = Math.min(1.4, Math.max(0.6, (cfg.lineThickness ?? 0.8) * 1.25));
   const cx = w / 2;
-  const cy = h / 2;
-  const min = Math.min(w, h);
-  const { alpha, scale } = enterExit(t, { inEnd: 0.25, outStart: 0.8 });
+  const { outA } = phase(t, { outS: 0.87 });
 
   ctx.save();
-  ctx.globalAlpha = alpha;
+  ctx.globalAlpha = outA;
 
-  // Expanding golden sonic boom ring
-  if (t > 0.12) {
-    const bt = (t - 0.12) / 0.75;
-    if (bt < 1) {
-      ctx.save();
-      ctx.globalAlpha = (1 - bt) * 0.8;
-      ctx.strokeStyle = p;
-      ctx.lineWidth = Math.max(1, (3 - bt * 2) * ls);
-      ctx.shadowColor = p;
-      ctx.shadowBlur = 18 * ls;
-      ctx.beginPath();
-      ctx.arc(cx, cy, min * (0.06 + bt * 0.42), 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.restore();
-    }
-  }
+  const lockT = 0.3;              // crosshair locks here
+  const serveT = 0.16;            // ball serve arc starts here
 
-  // Horizontal laser flare beam
-  const beamW = Math.min(w * 0.55, 680) * (0.2 + easeOutExpo(Math.min(1, t / 0.3)) * 0.45);
-  ctx.save();
-  ctx.translate(cx, cy);
-  const lg = ctx.createLinearGradient(-beamW / 2, 0, beamW / 2, 0);
-  lg.addColorStop(0, 'transparent');
-  lg.addColorStop(0.3, s);
-  lg.addColorStop(0.5, '#ffffff');
-  lg.addColorStop(0.7, p);
-  lg.addColorStop(1, 'transparent');
-  ctx.fillStyle = lg;
-  ctx.shadowColor = p;
-  ctx.shadowBlur = 12 * ls;
-  const beamH = Math.max(2, 3.5 * ls);
-  ctx.fillRect(-beamW / 2, -beamH / 2, beamW, beamH);
-  ctx.restore();
-
-  // Rotating lock-on crosshair gauge
-  ctx.save();
-  ctx.translate(cx, cy);
-  ctx.scale(scale, scale);
-  const targetR = min * 0.085;
-
-  ctx.save();
-  ctx.rotate(t * Math.PI * 2);
-  ctx.strokeStyle = p;
-  ctx.lineWidth = Math.max(1, 1.5 * ls);
-  ctx.shadowColor = p;
-  ctx.shadowBlur = 8 * ls;
-  ctx.beginPath();
-  ctx.arc(0, 0, targetR, 0, Math.PI * 2);
-  ctx.stroke();
-  for (let i = 0; i < 12; i++) {
-    const ang = (i / 12) * Math.PI * 2;
+  // Corner HUD brackets framing the frame
+  const L = 60 * k, m = 46 * k;
+  ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+  ctx.lineWidth = 3 * k;
+  const corners = [
+    [m, m, 1, 1], [w - m, m, -1, 1], [m, h - m, 1, -1], [w - m, h - m, -1, -1],
+  ];
+  for (const [x, y, dx, dy] of corners) {
+    const gp = quintOut(clamp01((t - 0.05) / 0.3));
     ctx.beginPath();
-    ctx.moveTo(Math.cos(ang) * targetR, Math.sin(ang) * targetR);
-    ctx.lineTo(Math.cos(ang) * (targetR + 8), Math.sin(ang) * (targetR + 8));
+    ctx.moveTo(x + dx * L * gp, y);
+    ctx.lineTo(x, y);
+    ctx.lineTo(x, y + dy * L * gp);
     ctx.stroke();
   }
-  ctx.restore();
 
+  // Serve arc with dashed trail and landing ball
+  const ballR = 34 * k;
+  const target = { x: w * 0.72, y: h * 0.62 };
+  if (t >= serveT) {
+    const bp = quintOut(clamp01((t - serveT) / 0.5));
+    const start = { x: w * 0.2, y: h * 0.24 };
+    const bx = start.x + (target.x - start.x) * bp;
+    const by = start.y + (target.y - start.y) * bp - Math.sin(bp * Math.PI) * 170 * k;
+
+    // dashed trajectory
+    ctx.save();
+    ctx.globalAlpha = outA * 0.5;
+    ctx.strokeStyle = P;
+    ctx.lineWidth = 2.5 * k;
+    ctx.setLineDash([12 * k, 14 * k]);
+    ctx.lineDashOffset = -t * 260 * k;
+    ctx.beginPath();
+    for (let i = 0; i <= 40; i++) {
+      const p = (i / 40) * bp;
+      const x = start.x + (target.x - start.x) * p;
+      const y = start.y + (target.y - start.y) * p - Math.sin(p * Math.PI) * 170 * k;
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.restore();
+
+    if (bp < 1) volleyball(ctx, bx, by, ballR, { k });
+  }
+
+  // Rotating reticle lock-on at target
+  const lockP = quintOut(clamp01((t - 0.2) / (lockT - 0.2)));
+  const R = 120 * k;
   ctx.save();
-  ctx.rotate(-t * Math.PI * 3);
-  ctx.strokeStyle = s;
-  ctx.lineWidth = Math.max(1, 1.2 * ls);
+  ctx.translate(target.x, target.y);
+  ctx.globalAlpha = outA * (0.35 + 0.65 * lockP);
+  ctx.rotate(t * Math.PI * 1.6);
+  ctx.strokeStyle = lockP >= 1 ? P : WHITE;
+  ctx.lineWidth = 3 * k;
+  for (let q = 0; q < 4; q++) {
+    ctx.beginPath();
+    ctx.arc(0, 0, R * (0.7 + 0.3 * lockP), (q * Math.PI) / 2 + 0.28, (q * Math.PI) / 2 + Math.PI / 2 - 0.28);
+    ctx.stroke();
+  }
+  ctx.rotate(-t * Math.PI * 2.6);
+  ctx.strokeStyle = S2;
+  ctx.lineWidth = 2 * k;
   ctx.beginPath();
-  ctx.arc(0, 0, targetR * 0.7, 0, Math.PI * 2);
+  ctx.arc(0, 0, R * 0.55, 0, Math.PI * 1.5);
+  ctx.stroke();
+  ctx.rotate(t * Math.PI * 2.6);
+  ctx.strokeStyle = WHITE;
+  ctx.lineWidth = 2.5 * k;
+  const cross = 26 * k * lockP;
+  ctx.beginPath();
+  ctx.moveTo(-cross, 0); ctx.lineTo(cross, 0);
+  ctx.moveTo(0, -cross); ctx.lineTo(0, cross);
   ctx.stroke();
   ctx.restore();
 
-  // Crosshair hairlines
-  ctx.strokeStyle = a;
-  ctx.lineWidth = Math.max(1, 1.8 * ls);
-  ctx.beginPath();
-  ctx.moveTo(-targetR - 14, 0);
-  ctx.lineTo(targetR + 14, 0);
-  ctx.moveTo(0, -targetR - 14);
-  ctx.lineTo(0, targetR + 14);
-  ctx.stroke();
-
-  // Golden laser specks twinkling around the target
-  const rnd = frameRandom(Math.floor(t * 90) + 21);
-  for (let i = 0; i < 18; i++) {
-    const sx = (rnd() - 0.5) * w * 0.7;
-    const sy = (rnd() - 0.5) * h * 0.6;
-    const tw = Math.sin(t * 22 + i * 3);
-    if (tw > 0.2) {
-      ctx.globalAlpha = tw * 0.8;
-      ctx.fillStyle = i % 2 ? a : s;
-      ctx.fillRect(sx, sy, 2.5, 2.5);
+  // ACE confirm flash + expanding square
+  if (t > lockT) {
+    const d = t - lockT;
+    const sp = clamp01(d / 0.32);
+    ctx.save();
+    ctx.globalAlpha = outA * (1 - sp) * 0.85;
+    ctx.strokeStyle = P;
+    ctx.lineWidth = 5 * k * (1 - sp) + 1;
+    const s = R * (1 + sp * 1.6);
+    ctx.strokeRect(target.x - s / 2, target.y - s / 2, s, s);
+    ctx.restore();
+    if (d < 0.08) {
+      ctx.globalAlpha = outA * (1 - d / 0.08) * 0.2;
+      ctx.fillStyle = WHITE;
+      ctx.fillRect(0, 0, w, h);
+      ctx.globalAlpha = outA;
     }
   }
+
+  // Lower-third ace banner
+  const bh = 132 * k;
+  const bw = Math.min(w * 0.62, 980 * k);
+  const bx = cx - bw / 2;
+  const by = h - bh - h * 0.12;
+  const bannerP = quintOut(clamp01((t - 0.38) / 0.26));
+  if (bannerP > 0) {
+    ctx.save();
+    const slide = (1 - bannerP) * (bw + 80 * k);
+    ctx.translate(-slide, 0);
+    slab(ctx, bx, by, bw, bh, 30 * k, SURFACE, { k, line: 'rgba(255,255,255,0.12)', lw: 1.5 });
+    // left accent ribbon
+    ctx.save();
+    slabPathClip(ctx, bx, by, bw, bh, 30 * k);
+    ctx.fillStyle = P;
+    ctx.fillRect(bx, by, 16 * k, bh);
+    ctx.fillStyle = S2;
+    ctx.fillRect(bx + 16 * k, by, 6 * k, bh);
+    ctx.restore();
+    tracked(ctx, 'UNTOUCHABLE SERVE', bx + 52 * k, by + 36 * k, {
+      k, size: 24 * k, color: 'rgba(255,255,255,0.75)', track: 7, weight: '800',
+    });
+    ctx.restore();
+
+    kineticTitle(ctx, main, bx + bw / 2 + 20 * k, by + bh * 0.62, {
+      k, t, start: 0.48, stagger: 0.026, maxW: bw - 110 * k,
+      size: 58 * k,
+      grad: [[0, '#FFFFFF'], [1, P]],
+    });
+  }
+
+  if (sub) {
+    chip(ctx, sub.replace(/\n/g, ' '), cx, by - 44 * k, {
+      k, color: S2, size: 24 * k, reveal: quintOut(clamp01((t - 0.6) / 0.2)),
+    });
+  }
+
   ctx.restore();
+}
 
-  // Title
-  ctx.save();
-  ctx.translate(cx, cy);
-  ctx.scale(scale, scale * 1.04); // subtle punch-in on lock-on
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-
-  const maxW = w * 0.58;
-  const fs = fitFontSize(ctx, main, maxW, Math.min(w * 0.075, 72), TITLE_FONT);
-  ctx.font = `900 ${fs}px ${TITLE_FONT}`;
-  ctx.fillStyle = '#000';
-  ctx.fillText(main, 4, 4);
-  const gold = ctx.createLinearGradient(0, -fs, 0, fs);
-  gold.addColorStop(0, '#ffffff');
-  gold.addColorStop(0.4, a);
-  gold.addColorStop(0.75, p);
-  gold.addColorStop(1, '#b8860b');
-  ctx.fillStyle = gold;
-  ctx.fillText(main, 0, 0);
-  ctx.strokeStyle = '#fff';
-  ctx.lineWidth = Math.max(1.2, 2.2 * ls);
-  ctx.strokeText(main, 0, 0);
-
-  drawSubtitleBadge(ctx, sub, fs * 0.62, maxW, s, p, Math.min(w * 0.028, 26), ls);
-  ctx.restore();
-
-  ctx.restore();
+// helper: clip to slab path
+function slabPathClip(ctx, x, y, w2, h2, skew) {
+  ctx.beginPath();
+  ctx.moveTo(x + skew, y);
+  ctx.lineTo(x + w2, y);
+  ctx.lineTo(x + w2 - skew, y + h2);
+  ctx.lineTo(x, y + h2);
+  ctx.closePath();
+  ctx.clip();
 }

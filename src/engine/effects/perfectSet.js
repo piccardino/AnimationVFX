@@ -1,125 +1,106 @@
-// VFX renderer: Perfect Set
+// Perfect Set — orbiting assist geometry with floating ball and elite tag
 import {
-  drawSubtitleBadge, TITLE_FONT,
-  enterExit, frameRandom,
-} from '../renderUtils';
+  sc, phase, clamp01, quintOut,
+  slab, kineticTitle, volleyball, tracked,
+  SURFACE, WHITE,
+} from '../broadcastKit';
 
 export function renderPerfectSet(ctx, w, h, t, cfg) {
-  const p = cfg.primaryColor || '#e040fb';
-  const s = cfg.secondaryColor || '#00e5ff';
-  const a = cfg.accentColor || '#ffffff';
+  const k = sc(w, h);
+  const P = cfg.primaryColor || '#E040FB';
+  const S2 = cfg.secondaryColor || '#00E5FF';
   const main = cfg.mainText || 'PERFECT SET';
   const sub = cfg.subText || '';
-  const ls = Math.min(1.4, Math.max(0.6, (cfg.lineThickness ?? 0.8) * 1.25));
   const cx = w / 2;
   const cy = h / 2;
-  const min = Math.min(w, h);
-  const { alpha, scale } = enterExit(t, { inEnd: 0.22, outStart: 0.82 });
+  const { outA } = phase(t, { outS: 0.86 });
 
   ctx.save();
-  ctx.globalAlpha = alpha;
+  ctx.globalAlpha = outA;
 
-  // Cosmic gradient backdrop
-  const cosmic = ctx.createRadialGradient(cx, cy, 0, cx, cy, min * 0.42);
-  cosmic.addColorStop(0, `${p}30`);
-  cosmic.addColorStop(0.55, `${s}1e`);
-  cosmic.addColorStop(1, 'transparent');
-  ctx.fillStyle = cosmic;
-  ctx.fillRect(0, 0, w, h);
-
-  // Golden volleyball halo behind the emoji icon
-  const haloY = cy - min * 0.17;
-  const haloPulse = 1 + Math.sin(t * 7) * 0.06;
-  const haloR = min * 0.085 * haloPulse;
-  const halo = ctx.createRadialGradient(cx, haloY, haloR * 0.3, cx, haloY, haloR);
-  halo.addColorStop(0, `${a}cc`);
-  halo.addColorStop(0.5, `${s}66`);
-  halo.addColorStop(1, 'transparent');
-  ctx.fillStyle = halo;
-  ctx.beginPath();
-  ctx.arc(cx, haloY, haloR, 0, Math.PI * 2);
-  ctx.fill();
-
-  ctx.save();
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.font = `900 ${Math.round(min * 0.075)}px ${TITLE_FONT}`;
-  ctx.shadowColor = s;
-  ctx.shadowBlur = 18 * ls;
-  ctx.fillText('🏐✨', cx, haloY);
-  ctx.restore();
-
-  // Multi-axis celestial orbits with glowing satellites
-  ctx.save();
-  ctx.translate(cx, cy + min * 0.05);
-  for (let orbit = 0; orbit < 3; orbit++) {
-    const rA = min * (0.2 + orbit * 0.07);
-    const rB = rA * (0.32 + orbit * 0.08);
-    ctx.rotate(Math.sin(t * 0.9 + orbit) * 0.35);
-    ctx.strokeStyle = orbit % 2 ? `${s}77` : `${p}77`;
-    ctx.lineWidth = Math.max(1, 1.4 * ls);
-    ctx.beginPath();
-    ctx.ellipse(0, 0, rA, rB, 0, 0, Math.PI * 2);
-    ctx.stroke();
-
-    const satAng = t * (2.2 - orbit * 0.45) + orbit * 2.4;
-    const sx = Math.cos(satAng) * rA;
-    const sy = Math.sin(satAng) * rB;
-    ctx.save();
-    ctx.shadowColor = orbit % 2 ? s : p;
-    ctx.shadowBlur = 14 * ls;
-    ctx.fillStyle = orbit % 2 ? s : a;
-    ctx.beginPath();
-    ctx.arc(sx, sy, 4.5 * ls, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
-  }
-  ctx.restore();
-
-  // Stardust twinkle field
-  const rnd = frameRandom(Math.floor(t * 60) + 33);
-  for (let i = 0; i < 26; i++) {
-    const dx = (rnd() - 0.5) * w * 0.85;
-    const dy = (rnd() - 0.5) * h * 0.75;
-    const tw = Math.sin(t * 10 + i * 2.3);
-    if (tw > 0.3) {
-      ctx.save();
-      ctx.globalAlpha = tw * 0.85 * alpha;
-      ctx.fillStyle = i % 2 ? a : s;
-      ctx.shadowColor = p;
-      ctx.shadowBlur = 6;
+  // Center stage panel (slim vertical slab)
+  const pw = Math.min(w * 0.6, 1000 * k);
+  const ph = h * 0.4;
+  const pp = quintOut(clamp01((t - 0.06) / 0.34));
+  if (pp > 0) {
+    const pwv = pw * pp;
+    slab(ctx, cx - pwv / 2, cy - ph / 2, pwv, ph, 26 * k, SURFACE, {
+      k, line: 'rgba(255,255,255,0.10)', lw: 1.5,
+    });
+    // corner accent dots
+    for (const [dx, dy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+      ctx.fillStyle = P;
       ctx.beginPath();
-      ctx.arc(dx, dy, 1.6 + rnd() * 2, 0, Math.PI * 2);
+      ctx.arc(cx + (dx * pwv) / 2 - dx * 18 * k, cy + (dy * ph) / 2 - dy * 18 * k, 4 * k, 0, Math.PI * 2);
       ctx.fill();
-      ctx.restore();
     }
   }
 
-  // Title
+  // Floating ball hovering above the panel with slow spin
+  const hoverY = cy - ph / 2 - 92 * k + Math.sin(t * 2.6) * 10 * k;
+  volleyball(ctx, cx, hoverY, 52 * k, { k });
+
+  // Orbit rings + satellites around the ball
+  const grow = quintOut(clamp01((t - 0.18) / 0.4));
   ctx.save();
-  ctx.translate(cx, cy + min * 0.05);
-  ctx.scale(scale, scale);
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-
-  const maxW = w * 0.58;
-  const fs = fitFontSize(ctx, main, maxW, Math.min(w * 0.075, 72), TITLE_FONT);
-  ctx.font = `900 ${fs}px ${TITLE_FONT}`;
-  ctx.fillStyle = '#000';
-  ctx.fillText(main, 4, 4);
-  const celestial = ctx.createLinearGradient(0, -fs, 0, fs);
-  celestial.addColorStop(0, '#ffffff');
-  celestial.addColorStop(0.4, p);
-  celestial.addColorStop(0.8, s);
-  celestial.addColorStop(1, '#800080');
-  ctx.fillStyle = celestial;
-  ctx.fillText(main, 0, 0);
-  ctx.strokeStyle = '#fff';
-  ctx.lineWidth = Math.max(1.2, 2.2 * ls);
-  ctx.strokeText(main, 0, 0);
-
-  drawSubtitleBadge(ctx, sub, fs * 0.6, maxW, s, p, Math.min(w * 0.028, 24), ls);
+  ctx.translate(cx, hoverY);
+  for (let o = 0; o < 2; o++) {
+    const rx = (110 + o * 58) * k * grow;
+    const ry = rx * (0.36 + o * 0.1);
+    ctx.globalAlpha = outA * grow * 0.8;
+    ctx.rotate(Math.sin(t * 0.7 + o * 1.4) * 0.3);
+    ctx.strokeStyle = o % 2 ? `${S2}AA` : `${P}AA`;
+    ctx.lineWidth = 2 * k;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
+    ctx.stroke();
+    const sa = t * (2.4 - o * 0.7) + o * 2.2;
+    ctx.fillStyle = o % 2 ? S2 : P;
+    ctx.beginPath();
+    ctx.arc(Math.cos(sa) * rx, Math.sin(sa) * ry, 6 * k, 0, Math.PI * 2);
+    ctx.fill();
+  }
   ctx.restore();
+
+  // Precision assist ticks around the ball (radar feel)
+  if (grow > 0.2) {
+    ctx.save();
+    ctx.translate(cx, hoverY);
+    ctx.globalAlpha = outA * 0.5;
+    ctx.strokeStyle = WHITE;
+    ctx.lineWidth = 2 * k;
+    for (let i = 0; i < 12; i++) {
+      const a = (i / 12) * Math.PI * 2 + t * 0.5;
+      const r1 = 74 * k;
+      const r2 = r1 + (i % 3 === 0 ? 14 : 8) * k;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(a) * r1, Math.sin(a) * r1);
+      ctx.lineTo(Math.cos(a) * r2, Math.sin(a) * r2);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // Title + elite tag + sub chip
+  const fs = kineticTitle(ctx, main, cx, cy - 8 * k, {
+    k, t, start: 0.3, stagger: 0.026, maxW: pw - 90 * k,
+    size: Math.min(w * 0.056, 66 * k),
+    grad: [[0, '#FFFFFF'], [0.6, '#F3C6FF'], [1, P]],
+  });
+  if (t > 0.5) {
+    const tp = quintOut(clamp01((t - 0.5) / 0.22));
+    ctx.save();
+    ctx.globalAlpha = outA * tp;
+    tracked(ctx, 'ASSIST MASTER', cx, cy + fs * 0.42, {
+      k, size: 24 * k, color: S2, track: 9, align: 'center', weight: '900',
+    });
+    ctx.restore();
+  }
+  if (sub) {
+    chip(ctx, sub.replace(/\n/g, ' '), cx, cy + fs * 0.78 + 18 * k, {
+      k, color: P, size: 24 * k, reveal: quintOut(clamp01((t - 0.58) / 0.22)),
+    });
+  }
 
   ctx.restore();
 }

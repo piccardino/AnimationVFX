@@ -1,155 +1,118 @@
-// VFX renderers: Monster Block, Super Spike, Service Ace
+// Monster Block — broadcast "wall" slam with vector ball impact
 import {
-  drawSubtitleBadge, fitFontSize, TITLE_FONT,
-  easeOutExpo, enterExit, frameRandom,
-} from '../renderUtils';
+  sc, phase, clamp01, quintOut, expoOut,
+  slab, kineticTitle, chip, volleyball,
+  INK, SURFACE, WHITE,
+} from '../broadcastKit';
+import { frameRandom } from '../renderUtils';
 
-function colors(cfg) {
-  return {
-    p: cfg.primaryColor || '#00e5ff',
-    s: cfg.secondaryColor || '#7c4dff',
-    a: cfg.accentColor || '#ffffff',
-    main: cfg.mainText || '',
-    sub: cfg.subText || '',
-    ls: Math.min(1.4, Math.max(0.6, (cfg.lineThickness ?? 0.8) * 1.25)),
-  };
-}
-
-/* ---------------- MONSTER BLOCK ---------------- */
 export function renderMonsterBlock(ctx, w, h, t, cfg) {
-  const { p, s, a, main, sub, ls } = colors(cfg);
+  const k = sc(w, h);
+  const P = cfg.primaryColor || '#00E5FF';
+  const S2 = cfg.secondaryColor || '#7C4DFF';
+  const main = cfg.mainText || 'MONSTER BLOCK';
+  const sub = cfg.subText || '';
   const cx = w / 2;
-  const cy = h / 2 - h * 0.02;
-  const min = Math.min(w, h);
-  const { alpha, scale } = enterExit(t, { inEnd: 0.22, outStart: 0.82 });
+  const cy = h / 2;
+  const { outA } = phase(t, { inD: 0.14, outS: 0.86 });
 
   ctx.save();
-  ctx.globalAlpha = alpha;
+  ctx.globalAlpha = outA;
 
-  // Metallic energy dome
-  const domeR = min * (0.16 + easeOutExpo(Math.min(1, t / 0.35)) * 0.08);
-  const domeGrad = ctx.createRadialGradient(cx, cy, domeR * 0.2, cx, cy, domeR);
-  domeGrad.addColorStop(0, `${s}55`);
-  domeGrad.addColorStop(0.7, `${p}33`);
-  domeGrad.addColorStop(1, 'transparent');
-  ctx.fillStyle = domeGrad;
-  ctx.beginPath();
-  ctx.arc(cx, cy, domeR, 0, Math.PI * 2);
-  ctx.fill();
-
-  // Hex-frame shield outline
+  // Background chevron slabs drifting left
   ctx.save();
-  ctx.translate(cx, cy);
-  ctx.rotate(t * 0.6);
-  ctx.strokeStyle = p;
-  ctx.lineWidth = Math.max(2, 3.5 * ls);
-  ctx.shadowColor = p;
-  ctx.shadowBlur = 18 * ls;
-  ctx.beginPath();
-  for (let i = 0; i <= 6; i++) {
-    const ang = (i / 6) * Math.PI * 2;
-    const r = domeR * 1.12;
-    if (i === 0) ctx.moveTo(Math.cos(ang) * r, Math.sin(ang) * r);
-    else ctx.lineTo(Math.cos(ang) * r, Math.sin(ang) * r);
+  ctx.globalAlpha = outA * 0.07;
+  const chevOff = t * 150 * k;
+  for (let i = 0; i < 3; i++) {
+    const bx = ((i * 0.42 - 0.25) * w + chevOff) % (w + 700 * k) - 350 * k;
+    slab(ctx, bx, -40, 160 * k, h + 80, 260 * k, P);
   }
-  ctx.stroke();
   ctx.restore();
 
-  // Double shockwave rings triggered at impact (~0.15)
-  if (t > 0.15) {
-    for (let k = 0; k < 2; k++) {
-      const bt = (t - 0.15 - k * 0.08) / 0.7;
-      if (bt > 0 && bt < 1) {
-        const rr = min * (0.08 + bt * 0.42);
-        ctx.globalAlpha = alpha * (1 - bt) * (k === 0 ? 0.85 : 0.5);
-        const rg = ctx.createRadialGradient(cx, cy, rr * 0.55, cx, cy, rr);
-        rg.addColorStop(0, 'transparent');
-        rg.addColorStop(0.55, s);
-        rg.addColorStop(0.85, p);
-        rg.addColorStop(1, 'transparent');
-        ctx.fillStyle = rg;
-        ctx.beginPath();
-        ctx.arc(cx, cy, rr, 0, Math.PI * 2);
-        ctx.fill();
-      }
+  // The wall: three staggered slabs wiping in
+  const wallW = Math.min(w * 0.68, 1180 * k);
+  const wallH = 86 * k;
+  const gap = 10 * k;
+  const wallY = cy - (wallH * 3 + gap * 2) / 2 + 6 * k;
+  const wallX = cx - wallW / 2;
+  for (let i = 0; i < 3; i++) {
+    const p = quintOut(clamp01((t - 0.02 - i * 0.05) / 0.2));
+    if (p <= 0) continue;
+    const ww = p * wallW;
+    const y = wallY + i * (wallH + gap);
+    slab(ctx, wallX, y, ww, wallH, 18 * k, i === 1 ? INK : SURFACE, {
+      k,
+      line: i === 1 ? P : 'rgba(255,255,255,0.10)',
+      lw: i === 1 ? 3 : 1.5,
+    });
+    if (p < 1) {
+      ctx.fillStyle = P;
+      ctx.fillRect(wallX + ww - 4 * k, y, 4 * k, wallH);
     }
   }
 
-  // Deterministic sparks + electric arcs
-  const rnd = frameRandom(Math.floor(t * 120));
-  ctx.save();
-  ctx.translate(cx, cy);
-  ctx.globalAlpha = Math.min(1, alpha * 0.9);
-  ctx.lineCap = 'round';
-  for (let i = 0; i < 22; i++) {
-    const ang = rnd() * Math.PI * 2;
-    const dist = min * 0.12 + ((t * min * 0.9 + i * 31) % (min * 0.38));
-    const len = 8 + rnd() * 26 * ls;
-    ctx.strokeStyle = i % 3 === 0 ? a : i % 2 === 0 ? s : p;
-    ctx.lineWidth = Math.max(1.5, 2.4 * ls);
-    ctx.shadowColor = p;
-    ctx.shadowBlur = 10 * ls;
-    ctx.beginPath();
-    ctx.moveTo(Math.cos(ang) * dist, Math.sin(ang) * dist);
-    ctx.lineTo(Math.cos(ang) * (dist + len), Math.sin(ang) * (dist + len));
-    ctx.stroke();
+  // Vector ball slams into the wall
+  const impT = 0.17;
+  const bp = quintOut(clamp01(t / impT));
+  const tx = cx + wallW * 0.06;
+  const ty = cy - wallH - gap * 1.5;
+  if (t <= impT + 0.03) {
+    const bx = cx - w * 0.44 + (tx - (cx - w * 0.44)) * bp;
+    const by = cy - h * 0.34 + (ty - (cy - h * 0.34)) * bp - Math.sin(bp * Math.PI) * 60 * k;
+    volleyball(ctx, bx, by, 46 * k, { k });
   }
 
-  // Electric zigzag bolts around the shield
-  if (t > 0.1) {
-    for (let b = 0; b < 4; b++) {
-      const baseAng = (b / 4) * Math.PI * 2 + t * 1.4;
-      let px = Math.cos(baseAng) * domeR * 1.05;
-      let py = Math.sin(baseAng) * domeR * 1.05;
+  // Impact ring, cracks, flash
+  if (t > impT) {
+    const d = t - impT;
+    const ringP = clamp01(d / 0.26);
+    ctx.save();
+    ctx.globalAlpha = outA * (1 - ringP) * 0.6;
+    ctx.strokeStyle = P;
+    ctx.lineWidth = 6 * k * (1 - ringP) + 1;
+    ctx.beginPath();
+    ctx.arc(tx, ty, (50 + ringP * 260) * k, 0, Math.PI * 2);
+    ctx.stroke();
+
+    const rnd = frameRandom(7);
+    ctx.strokeStyle = WHITE;
+    ctx.lineWidth = 3 * k;
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2 + rnd() * 0.5;
+      const len = (60 + rnd() * 110) * k * expoOut(ringP);
       ctx.beginPath();
-      ctx.moveTo(px, py);
-      for (let seg = 0; seg < 3; seg++) {
-        px += (rnd() - 0.5) * 34;
-        py += (rnd() - 0.5) * 34;
-        ctx.lineTo(px, py);
-      }
-      ctx.strokeStyle = a;
-      ctx.lineWidth = Math.max(1, 1.6 * ls);
+      ctx.moveTo(tx + Math.cos(a) * 30 * k, ty + Math.sin(a) * 30 * k);
+      ctx.lineTo(tx + Math.cos(a) * (30 * k + len), ty + Math.sin(a) * (30 * k + len));
       ctx.stroke();
     }
+    ctx.restore();
+
+    if (d < 0.09) {
+      ctx.globalAlpha = outA * (1 - d / 0.09) * 0.26;
+      ctx.fillStyle = WHITE;
+      ctx.fillRect(0, 0, w, h);
+      ctx.globalAlpha = outA;
+    }
   }
-  ctx.restore();
 
-  // Title block
-  ctx.save();
-  ctx.globalAlpha = alpha;
-  ctx.translate(cx, cy);
-  ctx.scale(scale, scale);
-
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.font = `900 ${Math.round(min * 0.075)}px ${TITLE_FONT}`;
-  ctx.fillStyle = s;
-  ctx.fillText('🛡️', 0, -h * 0.145);
-
-  const maxW = w * 0.6;
-  const fs = fitFontSize(ctx, main, maxW, Math.min(w * 0.078, 74));
-  ctx.font = `900 ${fs}px ${TITLE_FONT}`;
-  ctx.fillStyle = '#000';
-  ctx.fillText(main, 4, 4);
-  const grad = ctx.createLinearGradient(0, -fs, 0, fs);
-  grad.addColorStop(0, '#ffffff');
-  grad.addColorStop(0.45, p);
-  grad.addColorStop(1, s);
-  ctx.fillStyle = grad;
-  ctx.fillText(main, 0, 0);
-  ctx.strokeStyle = '#fff';
-  ctx.lineWidth = Math.max(1.2, 2.2 * ls);
-  ctx.strokeText(main, 0, 0);
-
-  drawSubtitleBadge(ctx, sub, fs * 0.62, maxW, s, p, Math.min(w * 0.03, 28), ls);
-  ctx.restore();
-
-  // White flash on impact
-  if (t >= 0.13 && t < 0.24) {
-    ctx.globalAlpha = (1 - (t - 0.13) / 0.11) * 0.32 * alpha;
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, w, h);
+  // Title + underline + chip
+  const fs = kineticTitle(ctx, main, cx, cy - 4 * k, {
+    k, t, start: 0.22, stagger: 0.024, maxW: wallW - 70 * k,
+    size: Math.min(w * 0.06, 72 * k),
+    grad: [[0, '#FFFFFF'], [1, '#C9D6FF']],
+  });
+  const barP = quintOut(clamp01((t - 0.36) / 0.25));
+  if (barP > 0) {
+    const bw = 360 * k * barP;
+    ctx.fillStyle = P;
+    ctx.fillRect(cx - bw / 2, cy + fs * 0.64, bw, 9 * k);
+    ctx.fillStyle = S2;
+    ctx.fillRect(cx + bw / 2 - 44 * k * barP, cy + fs * 0.64, 44 * k * barP, 9 * k);
+  }
+  if (sub) {
+    chip(ctx, sub.replace(/\n/g, ' '), cx, cy + fs * 0.64 + 56 * k, {
+      k, color: S2, size: 26 * k, reveal: quintOut(clamp01((t - 0.44) / 0.22)),
+    });
   }
 
   ctx.restore();

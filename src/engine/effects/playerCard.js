@@ -1,149 +1,152 @@
-// Renderer: Player Spotlight Card (broadcast lower third)
+// Player Spotlight Card — broadcast lower third with jersey block and stat strip
 import {
-  roundRectPath, BODY_FONT,
-  easeOutBack, easeOutCubic,
-} from '../renderUtils';
+  sc, clamp01, quintOut,
+  slab, tracked, volleyball,
+  SURFACE, WHITE,
+} from '../broadcastKit';
+import { roundRectPath, BODY_FONT } from '../renderUtils';
 
 export function renderPlayerCard(ctx, w, h, t, cfg) {
-  const p = cfg.primaryColor || '#7c3aed';
-  const s = cfg.secondaryColor || '#06b6d4';
-  const name = (cfg.mainText || 'PLAYER NAME').replace(/[()]/g, '').trim();
+  const k = sc(w, h);
+  const P = cfg.primaryColor || '#7C3AED';
+  const S2 = cfg.secondaryColor || '#06B6D4';
+  const name = (cfg.mainText || 'NOME GIOCATORE').replace(/[()]/g, '').trim();
   const roleLine = (cfg.subText || '').replace(/[()]/g, '').trim();
 
-  // Parse "#N • ROLE" style subtitle
+  // Parse "#N • ROLE" or "ROLE" formats
   let number = '';
   let role = roleLine;
-  const numMatch = roleLine.match(/^#?\s*(\d+)\s*[•\-–]?\s*/i);
-  if (numMatch) {
-    number = numMatch[1];
-    role = roleLine.slice(numMatch[0].length).trim() || roleLine;
+  const m = roleLine.match(/^#?\s*(\d+)\s*[•\-–]?\s*/i);
+  if (m) {
+    number = m[1];
+    role = roleLine.slice(m[0].length).trim() || roleLine;
   }
 
-  const cardH = h * 0.125;
-  const startX = w * 0.036;
-  const startY = h - cardH - h * 0.065;
-
-  // Smooth slide-in with broadcast back bounce
-  let currentX = startX;
-  if (t < 0.15) currentX = startX - (1 - easeOutBack(t / 0.15)) * w * 0.25;
-  else if (t > 0.85) currentX = startX - easeOutCubic((t - 0.85) / 0.15) * w * 0.25;
-  const slideFade = t > 0.85 ? 1 - easeOutCubic((t - 0.85) / 0.15) : Math.min(1, t / 0.05);
+  const cardH = 148 * k;
+  const cardY = h - cardH - h * 0.1;
+  const enter = quintOut(clamp01(t / 0.22));
+  const exit = 1 - clamp01((t - 0.86) / 0.14);
+  const slide = (1 - enter) * (w * 0.5);
 
   ctx.save();
-  ctx.globalAlpha = slideFade;
-  ctx.translate(Math.round(currentX), Math.round(startY));
+  ctx.globalAlpha = exit;
+  ctx.translate(-slide, 0);
 
-  // Measure content to compute integer card width (avoids subpixel jitter)
-  ctx.font = `900 ${Math.round(cardH * 0.32)}px ${BODY_FONT}`;
-  const nameWidth = ctx.measureText(name).width;
-  ctx.font = `800 ${Math.round(cardH * 0.17)}px ${BODY_FONT}`;
-  const roleWidth = ctx.measureText(role).width;
-  const textBlockX = cardH * 1.35;
-  const maxReqW = Math.max(nameWidth, roleWidth);
-  const cardW = Math.min(
-    Math.floor(w * 0.8),
-    Math.floor(textBlockX + maxReqW + cardH * 0.42)
-  );
+  const x = w * 0.06;
+  const numW = cardH * 1.06;
+  const nameSize = 54 * k;
+  const roleSize = 27 * k;
 
-  // Dark high-contrast glass background
-  roundRectPath(ctx, 0, 0, cardW, cardH, 20);
-  const bgGrad = ctx.createLinearGradient(0, 0, cardW, cardH);
-  bgGrad.addColorStop(0, 'rgba(6, 10, 24, 0.97)');
-  bgGrad.addColorStop(1, 'rgba(16, 22, 42, 0.98)');
-  ctx.fillStyle = bgGrad;
-  ctx.shadowColor = p;
-  ctx.shadowBlur = 20;
-  ctx.fill();
-  ctx.shadowBlur = 0;
+  ctx.font = `900 ${nameSize}px ${BODY_FONT}`;
+  const nameW = ctx.measureText(name).width;
+  ctx.font = `800 ${roleSize}px ${BODY_FONT}`;
+  const roleW = ctx.measureText(role.toUpperCase()).width;
+  const cardW = Math.min(w * 0.78, numW + Math.max(nameW, roleW) + 120 * k);
 
-  // Gradient border
-  const borderGrad = ctx.createLinearGradient(0, 0, cardW, 0);
-  borderGrad.addColorStop(0, p);
-  borderGrad.addColorStop(0.7, s);
-  borderGrad.addColorStop(1, p);
-  roundRectPath(ctx, 0, 0, cardW, cardH, 20);
-  ctx.strokeStyle = borderGrad;
-  ctx.lineWidth = 2.4;
-  ctx.stroke();
+  // Main card slab
+  slab(ctx, x, cardY, cardW * enter, cardH, 24 * k, SURFACE, {
+    k, line: 'rgba(255,255,255,0.12)', lw: 1.5,
+  });
 
-  // Left accent column with jersey number & rank halo
-  roundRectPath(ctx, 0, 0, cardH * 0.92, cardH, 20);
-  const sideGrad = ctx.createLinearGradient(0, 0, cardH * 0.92, cardH);
-  sideGrad.addColorStop(0, p);
-  sideGrad.addColorStop(1, s);
-  ctx.fillStyle = sideGrad;
-  ctx.save();
-  ctx.clip();
-  ctx.fillRect(0, 0, cardH * 0.92, cardH);
+  // Jersey number block (gradient team colors)
+  const nbW = numW * enter;
+  const grad = ctx.createLinearGradient(x, cardY, x + nbW, cardY + cardH);
+  grad.addColorStop(0, P);
+  grad.addColorStop(1, S2);
+  slab(ctx, x, cardY, nbW, cardH, 24 * k, grad, { k });
 
-  // Rank halo circles behind the number
-  for (let i = 0; i < 3; i++) {
-    ctx.strokeStyle = `rgba(255,255,255,${0.25 - i * 0.07})`;
-    ctx.lineWidth = 2;
+  // Jersey number with scale pop
+  if (number) {
+    const pop = quintOut(clamp01((t - 0.16) / 0.26));
+    ctx.save();
+    ctx.translate(x + nbW / 2, cardY + cardH / 2);
+    ctx.scale(0.6 + 0.4 * pop, 0.6 + 0.4 * pop);
+    ctx.globalAlpha = exit * pop;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = `900 ${62 * k}px ${BODY_FONT}`;
+    ctx.fillStyle = 'rgba(0,0,0,0.35)';
+    ctx.fillText(number, 0, 5 * k);
+    ctx.fillStyle = WHITE;
+    ctx.fillText(number, 0, 0);
+    ctx.restore();
+  } else {
+    volleyball(ctx, x + nbW / 2, cardY + cardH / 2, 30 * k, { k });
+  }
+
+  // Name with per-word highlight of the last name
+  const textX = x + numW + 34 * k;
+  const nameY = cardY + cardH * 0.42;
+  const nameP = quintOut(clamp01((t - 0.24) / 0.24));
+  if (nameP > 0) {
+    ctx.save();
     ctx.beginPath();
-    ctx.arc(cardH * 0.46, cardH * 0.52, cardH * (0.18 + i * 0.07) + Math.sin(t * 5) * 3, 0, Math.PI * 2);
-    ctx.stroke();
+    ctx.rect(x - 10 * k, cardY - 10 * k, (cardW + 20 * k) * clamp01((t - 0.2) / 0.3), cardH + 20 * k);
+    ctx.clip();
+    ctx.globalAlpha = exit * nameP;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'alphabetic';
+    const words = name.split(/\s+/);
+    const last = words.pop() || '';
+    ctx.font = `900 ${nameSize}px ${BODY_FONT}`;
+    const firstText = words.join(' ');
+    const firstW = firstText ? ctx.measureText(firstText + ' ').width : 0;
+    ctx.fillStyle = WHITE;
+    if (firstText) ctx.fillText(firstText, textX, nameY);
+    // last name in team gradient
+    const lg = ctx.createLinearGradient(textX + firstW, nameY - nameSize, textX + firstW, nameY);
+    lg.addColorStop(0, WHITE);
+    lg.addColorStop(1, P);
+    ctx.fillStyle = lg;
+    ctx.fillText(last, textX + firstW, nameY);
+    ctx.restore();
+
+    // underline sweep under the name
+    const uw = (firstW + ctx.measureText(last).width) * quintOut(clamp01((t - 0.4) / 0.24));
+    ctx.fillStyle = P;
+    ctx.fillRect(textX, nameY + 16 * k, uw, 4 * k);
   }
 
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.font = `900 ${Math.round(cardH * 0.42)}px ${BODY_FONT}`;
-  ctx.fillStyle = '#fff';
-  ctx.fillText(number || '#', cardH * 0.46, cardH * 0.53);
-  ctx.restore();
-
-  // Name and role text
-  ctx.textAlign = 'left';
-  ctx.textBaseline = 'alphabetic';
-  ctx.font = `900 ${Math.round(cardH * 0.32)}px ${BODY_FONT}`;
-  ctx.fillStyle = '#000';
-  ctx.fillText(name, textBlockX + 2, cardH * 0.5 + 2);
-  ctx.fillStyle = '#fff';
-  ctx.fillText(name, textBlockX, cardH * 0.5);
-
-  ctx.font = `800 ${Math.round(cardH * 0.17)}px ${BODY_FONT}`;
-  const roleGrad = ctx.createLinearGradient(textBlockX, 0, textBlockX + roleWidth, 0);
-  roleGrad.addColorStop(0, p);
-  roleGrad.addColorStop(1, s);
-  ctx.fillStyle = roleGrad;
-  ctx.fillText(role.toUpperCase(), textBlockX, cardH * 0.78);
-
-  // Team tag chip on the right end of the card
-  ctx.textBaseline = 'middle';
-  ctx.font = `900 ${Math.round(cardH * 0.13)}px ${BODY_FONT}`;
-  const chipText = 'ON COURT';
-  const chipW = ctx.measureText(chipText).width + cardH * 0.22;
-  roundRectPath(ctx, cardW - chipW - cardH * 0.15, cardH * 0.09, chipW, cardH * 0.17, cardH * 0.085);
-  ctx.strokeStyle = `${s}aa`;
-  ctx.lineWidth = 1.4;
-  ctx.stroke();
-  ctx.fillStyle = `${s}33`;
-  ctx.fill();
-  ctx.fillStyle = s;
-  ctx.textAlign = 'center';
-  ctx.fillText(chipText, cardW - chipW / 2 - cardH * 0.15, cardH * 0.185);
-
-  // Metallic shimmer pass clipped inside the card
-  ctx.save();
-  roundRectPath(ctx, 0, 0, cardW, cardH, 20);
-  ctx.clip();
-  const shimmerX = ((t * 1.4 - 0.2) % 1.4) * cardW;
-  const shimmerGrad = ctx.createLinearGradient(shimmerX - 90, 0, shimmerX + 90, cardH);
-  shimmerGrad.addColorStop(0, 'transparent');
-  shimmerGrad.addColorStop(0.5, 'rgba(255,255,255,0.13)');
-  shimmerGrad.addColorStop(1, 'transparent');
-  ctx.fillStyle = shimmerGrad;
-  ctx.fillRect(0, 0, cardW, cardH);
-
-  // Floating light dust specks
-  for (let i = 0; i < 9; i++) {
-    const px = ((i * 91 + t * 70) % cardW);
-    const py = (cardH * 0.25 + ((i * 53 + t * 24) % (cardH * 0.6)));
-    ctx.globalAlpha = slideFade * 0.35 * (0.5 + Math.sin(t * 6 + i) * 0.5);
-    ctx.fillStyle = '#fff';
-    ctx.fillRect(px, py, 2, 2);
+  // Role line
+  if (role) {
+    const rp = quintOut(clamp01((t - 0.34) / 0.22));
+    ctx.save();
+    ctx.globalAlpha = exit * rp;
+    tracked(ctx, role.toUpperCase(), textX, cardY + cardH * 0.72, {
+      k, size: roleSize, color: 'rgba(255,255,255,0.82)', track: 3, weight: '800',
+    });
+    ctx.restore();
   }
-  ctx.restore();
+
+  // Team chip on the right edge
+  if (t > 0.5) {
+    const cp = quintOut(clamp01((t - 0.5) / 0.22));
+    const chipW = 150 * k, chipH = 46 * k;
+    const chX = x + cardW * enter - chipW - 20 * k;
+    const chY = cardY - chipH / 2;
+    ctx.save();
+    ctx.globalAlpha = exit * cp;
+    slab(ctx, chX + (1 - cp) * 40 * k, chY, chipW, chipH, 10 * k, P, { k });
+    tracked(ctx, 'ON COURT', chX + (1 - cp) * 40 * k + chipW / 2, chY + chipH / 2 + 1, {
+      k, size: 19 * k, color: WHITE, track: 3, align: 'center', weight: '900',
+    });
+    ctx.restore();
+  }
+
+  // Shimmer pass across the card
+  if (t > 0.35 && t < 0.8) {
+    ctx.save();
+    roundRectPath(ctx, x, cardY, cardW * enter, cardH, 20 * k);
+    ctx.clip();
+    const shX = x + ((t - 0.35) / 0.45) * (cardW + 300 * k) - 150 * k;
+    const sg = ctx.createLinearGradient(shX - 120 * k, 0, shX + 120 * k, cardH);
+    sg.addColorStop(0, 'rgba(255,255,255,0)');
+    sg.addColorStop(0.5, 'rgba(255,255,255,0.14)');
+    sg.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = sg;
+    ctx.fillRect(x, cardY, cardW, cardH);
+    ctx.restore();
+  }
 
   ctx.restore();
 }
