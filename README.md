@@ -1,16 +1,51 @@
-# React + Vite
+﻿# 🇰 VolleyVFX Studio
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+Generatore broadcast di **overlay e animazioni VFX per pallavolo**: anteprima live su canvas, testo/colori personalizzabili, roster sincronizzato via Firebase ed export video frame-accurate pronto per Premiere, DaVinci, CapCut o OBS.
 
-Currently, two official plugins are available:
+## Funzionalita
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+- **7 preset di animazione** riscritti da zero: Monster Block, Super Spike, Service Ace, Monster Save, Perfect Set, Set & Match Point Alert, Player Spotlight Card
+- **Anteprima live** 1920x1080 (16:9) o 1080x1920 (9:16 verticale) con play/pausa, restart e timeline
+- **Export video** frame-per-frame (non real-time) a 30 o 60 fps: HEVC/H.264 MP4 con fallback WebM VP9; MediaRecorder per browser legacy
+- **Sfondi export**: Alpha (verde per keying), Green, Blue, Black
+- **Testo libero + sub-badge** su una o due righe (nome / ruolo-numero), quick preset
+- **Temi colore rapidi** e color picker primario/secondario/accento
+- **Controlli effetti**: durata, intensita linee/bordi, screen shake broadcast deterministico
+- **Audio**: sintetizzatore Web Audio (impact, spike swoosh, ace laser, score pop) oppure traccia personalizzata caricata dall utente
+- **Firebase Auth** (Google + email/password) e **sincronizzazione roster in tempo reale** dal Realtime Database con fallback progressivo e roster demo offline
 
-## React Compiler
+## Architettura
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+```
+src/
+main.jsx                 # Bootstrap React
+App.jsx                  # Shell + orchestrazione stato/esportazione
+index.css                # Design system (dark broadcast theme)
+lib/presets.js           # Definizioni preset, temi, testi rapidi
+engine/render.js         # Dispatcher frame + screen shake
+engine/renderUtils.js    # PRNG deterministico, easing, badge, titolo
+engine/effects/          # Un renderer per preset
+engine/recorder.js       # WebCodecs+muxers / MediaRecorder export
+engine/audio.js          # Motore SFX Web Audio
+firebase/core.js         # Init, config storage, auth API
+firebase/roster.js       # Sync roster/formazioni RTDB
+firebase/firebase.js     # Barrel pubblico
+components/              # Navbar, Previewer, Controls, Gallery,
+                         # PlayerSelector, ExportModal, AuthModal
+```
 
-## Expanding the Oxlint configuration
+Nota: le animazioni usano un PRNG seedato sul frame (mulberry32), quindi **preview ed export producono pixel identici**.
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and Oxlint's TypeScript related rules in your project.
+## Script
+
+```bash
+npm run dev       # Dev server Vite
+npm run build     # Build produzione (dist/)
+npm run lint      # Oxlint
+npm run preview   # Anteprima della build
+npm run deploy    # Build + pubblicazione su GitHub Pages
+```
+
+## Configurazione Firebase
+
+Le credenziali di default puntano al progetto `volley-hub-c90ca`. E possibile sostituirle via `.env` (`VITE_FIREBASE_API_KEY`, ecc. — vedi `.env.example`) oppure modificando `src/firebase/core.js`. Roster atteso sotto `users/{uid}/players` e/o `users/{uid}/formation`.

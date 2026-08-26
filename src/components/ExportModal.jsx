@@ -1,108 +1,79 @@
-import React from 'react';
-import { X, Download, CheckCircle, Video, Loader2, Sparkles, HelpCircle } from 'lucide-react';
+// Export result modal: progress state, preview player, download & editing tips
+import { X, Download, CheckCircle2, Loader2, Film, HelpCircle } from 'lucide-react';
 
-export default function ExportModal({
-  isOpen,
-  onClose,
-  isExporting,
-  exportProgress,
-  exportResult,
-}) {
+function download(result) {
+  const a = document.createElement('a');
+  a.href = result.videoUrl;
+  a.download = result.filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+}
+
+export default function ExportModal({ isOpen, onClose, isExporting, exportProgress, exportResult }) {
   if (!isOpen) return null;
 
-  const handleDownload = () => {
-    if (!exportResult) return;
-    const a = document.createElement('a');
-    a.href = exportResult.videoUrl;
-    a.download = exportResult.filename;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-  };
-
   return (
-    <div className="modal-backdrop">
-      <div className="modal-content">
-        {/* Modal Header */}
-        <div className="modal-header">
-          <div className="modal-title-group">
-            <Video size={22} className="text-cyan-400" />
-            <h3>Export Video Overlay Clip</h3>
-          </div>
+    <div className="modal-backdrop" onClick={!isExporting ? onClose : undefined}>
+      <div className="modal" onClick={(e) => e.stopPropagation()}>
+        <header className="modal__head">
+          <h3>
+            <Film size={19} /> Esportazione Clip Video
+          </h3>
           {!isExporting && (
-            <button onClick={onClose} className="modal-close-btn">
-              <X size={20} />
+            <button onClick={onClose} className="modal__close" aria-label="Chiudi">
+              <X size={18} />
             </button>
           )}
-        </div>
+        </header>
 
-        {/* Modal Body */}
-        <div className="modal-body">
-          {/* STATE 1: RENDERING & RECORDING */}
-          {isExporting && (
-            <div className="export-status-box">
-              <Loader2 size={48} className="animate-spin text-cyan-400 mb-4" />
-              <h4 className="export-heading">Recording Canvas at 60 FPS...</h4>
-              <p className="export-subtext">Generating MP4 video file</p>
-
-              {/* Progress Bar */}
-              <div className="progress-bar-track">
-                <div
-                  className="progress-bar-fill"
-                  style={{ width: `${exportProgress}%` }}
-                />
-              </div>
-              <span className="progress-percentage">{exportProgress}% completed</span>
+        {isExporting ? (
+          <div className="modal__state">
+            <Loader2 size={44} className="spin" />
+            <h4>Rendering frame-accurate in corso…</h4>
+            <p>Generazione del file video broadcast</p>
+            <div className="progress">
+              <div className="progress__fill" style={{ width: `${exportProgress}%` }} />
             </div>
-          )}
+            <span>{exportProgress}%</span>
+          </div>
+        ) : exportResult ? (
+          <div className="modal__state modal__state--done">
+            <p className="done-badge">
+              <CheckCircle2 size={20} /> Video generato con successo!
+            </p>
 
-          {/* STATE 2: EXPORT COMPLETE */}
-          {!isExporting && exportResult && (
-            <div className="export-success-box">
-              <div className="success-badge">
-                <CheckCircle size={28} className="text-emerald-400" />
-                <span>Video Successfully Generated!</span>
-              </div>
+            <video src={exportResult.videoUrl} controls autoPlay loop muted className="modal__video" />
 
-              {/* Recorded Video Preview Player */}
-              <div className="recorded-video-container">
-                <video
-                  src={exportResult.videoUrl}
-                  controls
-                  autoPlay
-                  loop
-                  className="recorded-video-player"
-                />
-              </div>
+            <ul className="meta">
+              <li>📁 {exportResult.filename}</li>
+              <li>🎞️ {exportResult.codecLabel || (exportResult.isMp4 ? 'MP4' : 'WebM')}</li>
+            </ul>
 
-              {/* Video Info Meta */}
-              <div className="video-meta-bar">
-                <span className="meta-item">📁 File: {exportResult.filename}</span>
-                <span className="meta-item">🎞️ Format: {exportResult.codecLabel || (exportResult.isMp4 ? 'MP4 (H.264)' : 'WebM HD')}</span>
-                <span className="meta-item">⚡ 60 FPS Broadcast Quality</span>
-              </div>
+            <button onClick={() => download(exportResult)} className="btn btn--primary btn--full">
+              <Download size={19} />
+              Scarica {exportResult.isMp4 ? 'MP4' : 'WebM'}
+            </button>
 
-              {/* Main Download Button */}
-              <button onClick={handleDownload} className="btn-download-large">
-                <Download size={22} />
-                <span>Download {exportResult.isMp4 ? 'MP4' : 'WebM'} Video Now</span>
-              </button>
-
-              {/* Instructions Box for Editors */}
-              <div className="editing-tips-box">
-                <div className="tips-header">
-                  <HelpCircle size={16} className="text-cyan-400" />
-                  <span>How to Use in Video Editing Software (Premiere, DaVinci, CapCut, OBS)</span>
-                </div>
-                <ul className="tips-list">
-                  <li>1. Import the recorded clip into a video track above your match footage.</li>
-                  <li>2. If you selected <b>Green Screen</b>, apply <i>Ultra Key</i> or <i>Chroma Key</i> effect to remove the green background with 1 click.</li>
-                  <li>3. If background is <b>Black</b>, set the blending mode of the clip to <i>Screen</i> or <i>Add</i>.</li>
-                </ul>
-              </div>
-            </div>
-          )}
-        </div>
+            <details className="tips">
+              <summary>
+                <HelpCircle size={14} /> Come usarlo nel software di montaggio
+              </summary>
+              <ol>
+                <li>Importa la clip su una traccia sopra le immagini della partita.</li>
+                <li>
+                  Con <b>Green/Blue screen</b> applica l’effetto <i>Chroma Key</i> o <i>Ultra Key</i>.
+                </li>
+                <li>
+                  Con sfondo <b>Nero</b> imposta la modalità di fusione su <i>Screen</i> o <i>Add</i>.
+                </li>
+                <li>
+                  Scegli <b>Alpha</b> per una base verde pronta per il keying (MP4 non supporta trasparenza).
+                </li>
+              </ol>
+            </details>
+          </div>
+        ) : null}
       </div>
     </div>
   );

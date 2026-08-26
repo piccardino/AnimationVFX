@@ -1,216 +1,168 @@
-import React, { useState, useEffect } from 'react';
-import { X, LogIn, UserPlus, Key, CheckCircle, AlertCircle, ShieldCheck } from 'lucide-react';
-import { loginWithEmail, registerWithEmail, loginWithGoogle, completeGoogleSignIn, getStoredFirebaseConfig, saveStoredFirebaseConfig, initFirebase } from '../firebase/firebase';
+// Firebase authentication modal: Google + email/password login & registration
+import { useEffect, useState } from 'react';
+import { X, ShieldCheck, CheckCircle2, AlertCircle, Loader2 } from 'lucide-react';
+import {
+  loginWithEmail,
+  registerWithEmail,
+  loginWithGoogle,
+  completeGoogleSignIn,
+} from '../firebase/firebase';
 
-export default function FirebaseAuthModal({ isOpen, onClose, user, onAuthChange }) {
-  const [mode, setMode] = useState('login'); // 'login' | 'register'
+export default function FirebaseAuthModal({ isOpen, onClose, onAuthChange }) {
+  const [mode, setMode] = useState('login');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [errorMsg, setErrorMsg] = useState('');
-  const [successMsg, setSuccessMsg] = useState('');
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    // Pick up a pending Google redirect sign-in (e.g. a return from Google with the modal open).
     let cancelled = false;
-    completeGoogleSignIn()
-      .then((res) => {
-        if (cancelled) return;
-        if (res.user) {
-          setSuccessMsg('Signed in successfully with Google!');
-          if (onAuthChange) onAuthChange(res.user);
-          setTimeout(() => onClose(), 1000);
-        } else if (res.error) {
-          setErrorMsg('Google Sign-In failed: ' + res.error);
-        }
-      })
-      .catch(() => {});
-    return () => { cancelled = true; };
+    completeGoogleSignIn().then((res) => {
+      if (cancelled || !res) return;
+      if (res.user) {
+        setSuccess('Accesso con Google completato!');
+        onAuthChange?.(res.user);
+        setTimeout(() => !cancelled && onClose(), 900);
+      } else if (res.error) {
+        setError('Accesso Google fallito: ' + res.error);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   if (!isOpen) return null;
 
-  const handleGoogleLogin = async () => {
-    setErrorMsg('');
-    setSuccessMsg('');
+  const run = async (action, okMessage) => {
+    setError('');
+    setSuccess('');
     setLoading(true);
-
-    const res = await loginWithGoogle();
+    const res = await action();
     setLoading(false);
-
     if (res.error) {
-      setErrorMsg('Google Sign-In failed: ' + res.error);
+      setError(res.error);
     } else if (res.user) {
-      setSuccessMsg('Signed in successfully with Google!');
-      if (onAuthChange) onAuthChange(res.user);
-      setTimeout(() => onClose(), 1000);
+      setSuccess(okMessage);
+      onAuthChange?.(res.user);
+      setTimeout(onClose, 900);
     }
   };
 
-  const handleLogin = async (e) => {
+  const googleLogin = async () =>
+    run(async () => {
+      const res = await loginWithGoogle();
+      // With redirect flow the page reloads; a user-less non-error result just waits.
+      return res.user ? res : { user: null, error: '' };
+    }, 'Accesso con Google completato!');
+
+  const emailLogin = (e) => {
     e.preventDefault();
-    setErrorMsg('');
-    setSuccessMsg('');
-    setLoading(true);
-
-    const res = await loginWithEmail(email, password);
-    setLoading(false);
-
-    if (res.error) {
-      setErrorMsg('Email sign-in error: ' + res.error);
-    } else {
-      setSuccessMsg('Signed in successfully!');
-      if (onAuthChange) onAuthChange(res.user);
-      setTimeout(() => onClose(), 1000);
-    }
+    run(() => loginWithEmail(email, password), 'Accesso effettuato!');
   };
 
-  const handleRegister = async (e) => {
+  const emailRegister = (e) => {
     e.preventDefault();
-    setErrorMsg('');
-    setSuccessMsg('');
-    setLoading(true);
-
-    const res = await registerWithEmail(email, password);
-    setLoading(false);
-
-    if (res.error) {
-      setErrorMsg('Registration error: ' + res.error);
-    } else {
-      setSuccessMsg('Account created successfully!');
-      if (onAuthChange) onAuthChange(res.user);
-      setTimeout(() => onClose(), 1000);
-    }
+    run(() => registerWithEmail(email, password), 'Account creato con successo!');
   };
 
   return (
-    <div className="modal-backdrop">
-      <div className="modal-content" style={{ maxWidth: '520px' }}>
-        {/* Header */}
-        <div className="modal-header">
-          <div className="modal-title-group">
-            <ShieldCheck size={22} className="text-cyan-400" />
-            <h3>Firebase DB Connection & Sign In</h3>
-          </div>
-          <button onClick={onClose} className="modal-close-btn">
-            <X size={20} />
+    <div className="modal-backdrop" onClick={onClose}>
+      <div className="modal modal--auth" onClick={(e) => e.stopPropagation()}>
+        <header className="modal__head">
+          <h3>
+            <ShieldCheck size={19} /> Connessione Firebase & Accesso
+          </h3>
+          <button onClick={onClose} className="modal__close" aria-label="Chiudi">
+            <X size={18} />
           </button>
+        </header>
+
+        <div className="controls__tabs controls__tabs--inset">
+          {['login', 'register'].map((m) => (
+            <button key={m} onClick={() => setMode(m)} className={`tab ${mode === m ? 'tab--active' : ''}`}>
+              {m === 'login' ? 'Accedi' : 'Registrati'}
+            </button>
+          ))}
         </div>
 
-        {/* Modal Tabs */}
-        <div className="controls-tabs" style={{ margin: '1rem 1.5rem 0' }}>
-          <button
-            onClick={() => { setMode('login'); setErrorMsg(''); setSuccessMsg(''); }}
-            className={`tab-btn ${mode === 'login' ? 'tab-active' : ''}`}
-          >
-            <LogIn size={15} />
-            <span>Sign In</span>
-          </button>
-          <button
-            onClick={() => { setMode('register'); setErrorMsg(''); setSuccessMsg(''); }}
-            className={`tab-btn ${mode === 'register' ? 'tab-active' : ''}`}
-          >
-            <UserPlus size={15} />
-            <span>Register</span>
-          </button>
-        </div>
-
-        {/* Body */}
-        <div className="modal-body">
-          {errorMsg && (
-            <div className="alert-box alert-error">
-              <AlertCircle size={18} />
-              <span>{errorMsg}</span>
-            </div>
+        <div className="modal__state modal__state--auth">
+          {error && (
+            <p className="alert alert--error">
+              <AlertCircle size={17} /> {error}
+            </p>
+          )}
+          {success && (
+            <p className="alert alert--success">
+              <CheckCircle2 size={17} /> {success}
+            </p>
           )}
 
-          {successMsg && (
-            <div className="alert-box alert-success">
-              <CheckCircle size={18} />
-              <span>{successMsg}</span>
-            </div>
-          )}
+          {loading && <Loader2 size={20} className="spin" style={{ alignSelf: 'center' }} />}
 
-          {/* MODE: LOGIN */}
-          {mode === 'login' && (
-            <div className="space-y-4">
-              {/* Google Auth Button */}
-              <button
-                type="button"
-                onClick={handleGoogleLogin}
-                disabled={loading}
-                className="btn-google-login"
-              >
-                <span>🌐 Sign In with Google Account</span>
+          {mode === 'login' ? (
+            <>
+              <button type="button" onClick={googleLogin} disabled={loading} className="btn btn--google btn--full">
+                🌐 Accedi con Google
               </button>
-
-              <div className="divider-or">
-                <span>or with Email</span>
-              </div>
-
-              <form onSubmit={handleLogin} className="space-y-4">
-                <div className="input-group">
-                  <label className="input-label">User Email</label>
+              <div className="divider">oppure con email</div>
+              <form onSubmit={emailLogin} className="stack">
+                <label className="field">
+                  <span>Email</span>
                   <input
                     type="email"
                     required
+                    className="input"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    className="input-text"
-                    placeholder="name@team.com"
+                    placeholder="nome@squadra.com"
                   />
-                </div>
-
-                <div className="input-group">
-                  <label className="input-label">Password</label>
+                </label>
+                <label className="field">
+                  <span>Password</span>
                   <input
                     type="password"
                     required
+                    className="input"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className="input-text"
                     placeholder="••••••••"
                   />
-                </div>
-
-                <button type="submit" disabled={loading} className="btn-primary" style={{ width: '100%', justifyContent: 'center' }}>
-                  {loading ? 'Connecting...' : 'Sign In with Email'}
+                </label>
+                <button type="submit" disabled={loading} className="btn btn--primary btn--full">
+                  Accedi con Email
                 </button>
               </form>
-            </div>
-          )}
-
-          {/* MODE: REGISTER */}
-          {mode === 'register' && (
-            <form onSubmit={handleRegister} className="space-y-4">
-              <div className="input-group">
-                <label className="input-label">Registration Email</label>
+            </>
+          ) : (
+            <form onSubmit={emailRegister} className="stack">
+              <label className="field">
+                <span>Email di registrazione</span>
                 <input
                   type="email"
                   required
+                  className="input"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="input-text"
-                  placeholder="name@team.com"
+                  placeholder="nome@squadra.com"
                 />
-              </div>
-
-              <div className="input-group">
-                <label className="input-label">Create Password</label>
+              </label>
+              <label className="field">
+                <span>Crea password</span>
                 <input
                   type="password"
                   required
                   minLength={6}
+                  className="input"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="input-text"
-                  placeholder="At least 6 characters"
+                  placeholder="Almeno 6 caratteri"
                 />
-              </div>
-
-              <button type="submit" disabled={loading} className="btn-primary" style={{ width: '100%', justifyContent: 'center' }}>
-                {loading ? 'Creating Account...' : 'Create Firebase Account'}
+              </label>
+              <button type="submit" disabled={loading} className="btn btn--primary btn--full">
+                Crea account Firebase
               </button>
             </form>
           )}

@@ -1,68 +1,67 @@
-import React from 'react';
-import { Volume2, VolumeX, Video, Sparkles, User, LogOut } from 'lucide-react';
-import { soundFX } from '../engine/soundEffects';
+// Top navigation bar: branding, preset badge, auth state, sound toggle & quick export
+import { Volume2, VolumeX, Clapperboard, Sparkles, User, LogOut } from 'lucide-react';
+import { soundFX } from '../engine/audio';
 
-export default function Navbar({ soundEnabled, setSoundEnabled, activePreset, onQuickExport, user, onOpenAuth, onLogout }) {
+export default function Navbar({
+  soundEnabled,
+  onToggleSound,
+  activePreset,
+  onQuickExport,
+  user,
+  onOpenAuth,
+  onLogout,
+}) {
   const toggleSound = () => {
-    soundFX.enabled = !soundEnabled;
-    setSoundEnabled(!soundEnabled);
+    soundFX.setEnabled(!soundEnabled);
+    onToggleSound(!soundEnabled);
   };
 
   return (
-    <header className="navbar-container">
-      <div className="navbar-inner">
-        {/* Brand Logo */}
-        <div className="brand-group">
-          <div className="logo-icon-wrapper">
-            <span className="logo-emoji">🏐</span>
-            <div className="logo-glow"></div>
-          </div>
-          <div>
-            <h1 className="brand-title">
-              VOLLEY<span className="brand-highlight">VFX</span> STUDIO
+    <header className="navbar">
+      <div className="navbar__inner">
+        <div className="brand">
+          <span className="brand__logo">🏐</span>
+          <div className="brand__text">
+            <h1>
+              VOLLEY<span>VFX</span> STUDIO
             </h1>
-            <p className="brand-subtitle">Volleyball Video Animations & Overlays</p>
+            <p>Animazioni & Overlay Broadcast per Pallavolo</p>
           </div>
         </div>
 
-        {/* Center Preset Badge */}
-        <div className="active-preset-badge">
-          <Sparkles className="badge-icon text-cyan-400" size={16} />
-          <span className="badge-label">Active Preset:</span>
-          <span className="badge-value">{activePreset.name}</span>
+        <div className="navbar__preset">
+          <Sparkles size={15} />
+          <span>Preset attivo:</span>
+          <strong>{activePreset.name}</strong>
         </div>
 
-        {/* Right Controls */}
-        <div className="nav-actions">
-          {/* Firebase User Login Button */}
+        <div className="navbar__actions">
           {user ? (
-            <div className="user-profile-pill">
-              <User size={14} className="text-cyan-400" />
-              <span className="user-email-text">{user.email}</span>
-              <button onClick={onLogout} className="btn-logout-icon" title="Sign Out">
+            <div className="user-pill">
+              <User size={14} />
+              <span>{user.email}</span>
+              <button onClick={onLogout} title="Esci" aria-label="Esci">
                 <LogOut size={14} />
               </button>
             </div>
           ) : (
-            <button onClick={onOpenAuth} className="btn-secondary-sm">
+            <button onClick={onOpenAuth} className="btn btn--ghost">
               <User size={16} />
-              <span>Sign In / Login</span>
+              Accedi
             </button>
           )}
 
-          {/* Sound Toggle */}
           <button
             onClick={toggleSound}
-            className={`btn-icon ${soundEnabled ? 'btn-sound-active' : 'btn-sound-muted'}`}
-            title={soundEnabled ? 'Disable Sound Effects' : 'Enable Sound Effects'}
+            className={`btn-icon ${soundEnabled ? 'btn-icon--on' : ''}`}
+            title={soundEnabled ? 'Disattiva effetti sonori' : 'Attiva effetti sonori'}
           >
-            {soundEnabled ? <Volume2 size={20} /> : <VolumeX size={20} />}
+            {soundEnabled ? <Volume2 size={19} /> : <VolumeX size={19} />}
           </button>
 
-          {/* Quick Export MP4 */}
-          <button onClick={onQuickExport} className="btn-primary">
-            <Video size={18} />
-            <span>Download MP4</span>
+          <button onClick={onQuickExport} className="btn btn--primary">
+            <Clapperboard size={17} />
+            Esporta MP4
           </button>
         </div>
       </div>

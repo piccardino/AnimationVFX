@@ -1,92 +1,86 @@
-import React, { useState } from 'react';
-import { PRESET_CATEGORIES, PRESETS } from '../engine/canvasRenderers';
-import { Sparkles, Zap, Trophy, User, Check } from 'lucide-react';
+// Preset library gallery with category filters
+import { useState } from 'react';
+import { PRESET_CATEGORIES, PRESETS } from '../lib/presets';
+import { Zap, UserRound, Check } from 'lucide-react';
 
 export default function AnimationGallery({ activePreset, onSelectPreset }) {
-  const [selectedCategory, setSelectedCategory] = useState('all');
+  const [category, setCategory] = useState('all');
 
-  const filteredPresets = selectedCategory === 'all'
-    ? PRESETS
-    : PRESETS.filter((p) => p.category === selectedCategory);
+  const visible =
+    category === 'all' ? PRESETS : PRESETS.filter((p) => p.category === category);
 
   return (
-    <div className="gallery-card">
-      <div className="gallery-header">
-        <div className="gallery-title-group">
-          <Sparkles size={20} className="text-amber-400" />
-          <h2 className="gallery-title">Volleyball Overlay & VFX Animation Library</h2>
-        </div>
-
-        {/* Category Filters */}
-        <div className="category-tabs">
+    <section className="gallery">
+      <header className="gallery__header">
+        <h2>Libreria Animazioni & VFX</h2>
+        <div className="gallery__filters">
           <button
-            onClick={() => setSelectedCategory('all')}
-            className={`cat-tab ${selectedCategory === 'all' ? 'cat-active' : ''}`}
+            onClick={() => setCategory('all')}
+            className={`chip ${category === 'all' ? 'chip--active' : ''}`}
           >
-            All ({PRESETS.length})
+            Tutti ({PRESETS.length})
           </button>
-          
           {PRESET_CATEGORIES.map((cat) => (
             <button
               key={cat.id}
-              onClick={() => setSelectedCategory(cat.id)}
-              className={`cat-tab ${selectedCategory === cat.id ? 'cat-active' : ''}`}
+              onClick={() => setCategory(cat.id)}
+              className={`chip ${category === cat.id ? 'chip--active' : ''}`}
             >
               {cat.name}
             </button>
           ))}
         </div>
-      </div>
+      </header>
 
-      {/* Preset Cards Grid */}
-      <div className="preset-grid">
-        {filteredPresets.map((preset) => {
+      <div className="gallery__grid">
+        {visible.map((preset) => {
           const isActive = activePreset.id === preset.id;
           return (
-            <div
+            <article
               key={preset.id}
               onClick={() => onSelectPreset(preset)}
-              className={`preset-card ${isActive ? 'preset-card-active' : ''}`}
+              className={`preset-card ${isActive ? 'preset-card--active' : ''}`}
             >
-              {/* Active Badge */}
               {isActive && (
-                <div className="active-corner-badge">
-                  <Check size={14} />
-                  <span>ACTIVE</span>
-                </div>
+                <span className="preset-card__badge">
+                  <Check size={12} /> ATTIVO
+                </span>
               )}
 
-              {/* Preset Header */}
-              <div className="preset-card-header">
-                <div className="preset-icon-badge" style={{ backgroundColor: `${preset.primaryColor}22`, color: preset.primaryColor }}>
-                  {preset.category === 'vfx' && <Zap size={22} />}
-                  {preset.category === 'broadcast' && <Trophy size={22} />}
-                  {preset.category === 'player' && <User size={22} />}
-                </div>
-
-                <div className="preset-titles">
-                  <h3 className="preset-name">{preset.name}</h3>
-                  <span className="preset-category-tag">{preset.category.toUpperCase()}</span>
+              <div className="preset-card__head">
+                <span
+                  className="preset-card__icon"
+                  style={{
+                    background: `linear-gradient(135deg, ${preset.primaryColor}33, ${preset.secondaryColor}33)`,
+                    color: preset.primaryColor,
+                    boxShadow: `0 0 14px ${preset.primaryColor}44`,
+                  }}
+                >
+                  {preset.category === 'player' ? <UserRound size={20} /> : <Zap size={20} />}
+                </span>
+                <div>
+                  <h3>{preset.name}</h3>
+                  <small style={{ color: preset.secondaryColor }}>
+                    {preset.category.toUpperCase()} • {preset.duration}s
+                  </small>
                 </div>
               </div>
 
-              <p className="preset-desc">{preset.description}</p>
+              <p className="preset-card__desc">{preset.description}</p>
 
-              {/* Swatch & Select Button */}
-              <div className="preset-card-footer">
-                <div className="mini-swatch">
-                  <span style={{ backgroundColor: preset.primaryColor }}></span>
-                  <span style={{ backgroundColor: preset.secondaryColor }}></span>
-                </div>
-
-                <button className={`btn-select ${isActive ? 'btn-select-active' : ''}`}>
-                  {isActive ? 'Active Animation' : 'Select'}
-                </button>
-              </div>
-            </div>
+              <footer className="preset-card__footer">
+                <span className="swatch-pair">
+                  <i style={{ background: preset.primaryColor }} />
+                  <i style={{ background: preset.secondaryColor }} />
+                </span>
+                <span className={`btn btn--tiny ${isActive ? 'btn--primary' : 'btn--ghost'}`}>
+                  {isActive ? 'In uso' : 'Seleziona'}
+                </span>
+              </footer>
+            </article>
           );
         })}
       </div>
-    </div>
+    </section>
   );
 }

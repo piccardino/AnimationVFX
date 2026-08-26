@@ -1,206 +1,153 @@
-import React, { useState, useEffect } from 'react';
-import { Database, UserCheck, RefreshCw } from 'lucide-react';
-import { fetchPlayersFromFirebase, subscribeToPlayersFromFirebase } from '../firebase/firebase';
+// Live roster selector synced with Firebase Realtime DB
+import { useState, useEffect } from 'react';
+import { Database, RefreshCw, UserCheck } from 'lucide-react';
+import {
+  fetchPlayersFromFirebase,
+  subscribeToPlayersFromFirebase,
+  isMatchTeam,
+  SAMPLE_PLAYERS,
+} from '../firebase/firebase';
 
-const TEAM_COLOR_SCHEMES = {
-  A: { primary: '#00f0ff', secondary: '#7000ff', badge: '🔵' },
-  B: { primary: '#ff0055', secondary: '#ffcc00', badge: '🔴' }
+const TEAM_SCHEMES = {
+  A: { primary: '#00f0ff', secondary: '#7000ff' },
+  B: { primary: '#ff0055', secondary: '#ffcc00' },
 };
 
-const SAMPLE_FALLBACK_PLAYERS = [
-  { id: 'p1', name: 'MARCO ZANGHERI', number: '7', role: 'OUTSIDE HITTER', team: 'VPM' },
-  { id: 'p2', name: 'GIANLUCA GALASSI', number: '11', role: 'MIDDLE BLOCKER', team: 'VPM' },
-  { id: 'p3', name: 'SIMONE GIANNELLI', number: '6', role: 'SETTER', team: 'VPM' },
-  { id: 'p4', name: 'FABIO BALASO', number: '14', role: 'LIBERO', team: 'VHP' },
-  { id: 'p5', name: 'YURI ROMANÒ', number: '16', role: 'OPPOSITE', team: 'VHP' },
-];
+function schemeFor(player, teamA, teamB) {
+  const isB = isMatchTeam(player.team, teamB, 'B');
+  return isB ? TEAM_SCHEMES.B : TEAM_SCHEMES.A;
+}
 
 export default function PlayerFirebaseSelector({ user, onSelectPlayer, onOpenAuth }) {
   const [players, setPlayers] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [selectedTeamFilter, setSelectedTeamFilter] = useState('ALL'); // 'ALL' | 'TEAM_A' | 'TEAM_B'
-  const [teamNames, setTeamNames] = useState({ teamA: 'VPM', teamB: 'VHP' });
-  const [statusMsg, setStatusMsg] = useState('');
-
-  const loadPlayersManual = async () => {
-    setLoading(true);
-    setStatusMsg('');
-    const res = await fetchPlayersFromFirebase(user ? user.uid : null, user ? user.email : null);
-    setLoading(false);
-
-    if (res && res.teamA) {
-      setTeamNames({ teamA: res.teamA, teamB: res.teamB });
-    }
-
-    if (res && res.players && res.players.length > 0) {
-      setPlayers(res.players);
-      setStatusMsg(user ? `Active roster ${res.teamA} & ${res.teamB} loaded!` : `${res.players.length} active players!`);
-    } else {
-      setPlayers(SAMPLE_FALLBACK_PLAYERS);
-      setStatusMsg('Demo roster loaded.');
-    }
-  };
+  const [loading, setLoading] = useState(true);
+  const [filter, setFilter] = useState('ALL');
+  const [teams, setTeams] = useState({ teamA: 'VPM', teamB: 'VHP' });
+  const [status, setStatus] = useState('Connessione al Realtime DB…');
 
   useEffect(() => {
+    let alive = true;
     setLoading(true);
-    setStatusMsg('Connecting to Realtime DB...');
 
     const unsubscribe = subscribeToPlayersFromFirebase(
-      user ? user.uid : null,
-      user ? user.email : null,
+      user?.uid ?? null,
+      user?.email ?? null,
       (res) => {
+        if (!alive) return;
         setLoading(false);
-        if (res && res.teamA) {
-          setTeamNames({ teamA: res.teamA, teamB: res.teamB });
-        }
-
-        if (res && res.players && res.players.length > 0) {
+        if (res?.players?.length) {
           setPlayers(res.players);
-          setStatusMsg(user ? `Sync: ${res.teamA} vs ${res.teamB}` : `${res.players.length} players synced!`);
+          if (res.teamA && res.teamB) setTeams({ teamA: res.teamA, teamB: res.teamB });
+          setStatus(user ? `Sync: ${res.teamA} vs ${res.teamB}` : `${res.players.length} giocatori sincronizzati`);
 
-          // Select first player if none selected yet
-          const firstP = res.players[0];
-          const isTeamB = isMatchTeam(firstP.team, res.teamB, 'B');
-          const palette = isTeamB ? TEAM_COLOR_SCHEMES.B : TEAM_COLOR_SCHEMES.A;
-          if (onSelectPlayer) {
-            onSelectPlayer({
-              name: firstP.name,
-              number: firstP.number !== undefined && firstP.number !== null ? firstP.number : (firstP.num || ''),
-              role: firstP.role,
-              team: firstP.team || res.teamA,
-              primaryColor: palette.primary,
-              secondaryColor: palette.secondary
-            });
-          }
+          // Auto-select the first available player
+          const first = res.players[0];
+          const palette = schemeFor(first, res.teamA, res.teamB);
+          onSelectPlayer?.({
+            name: first.name,
+            number: first.number ?? first.num ?? '',
+            role: first.role || '',
+            team: first.team || res.teamA,
+            ...palette,
+          });
         } else {
-          setPlayers(SAMPLE_FALLBACK_PLAYERS);
-          setTeamNames({ teamA: 'VPM', teamB: 'VHP' });
-          setStatusMsg('Demo roster loaded.');
+          setPlayers(SAMPLE_PLAYERS);
+          setTeams({ teamA: 'VPM', teamB: 'VHP' });
+          setStatus('Roster demo caricato.');
         }
       }
     );
 
-    return () => unsubscribe();
+    return () => {
+      alive = false;
+      unsubscribe();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
-  const handleSelect = (e) => {
-    const selectedId = e.target.value;
-    const player = players.find((p) => p.id === selectedId);
-    if (player && onSelectPlayer) {
-      const isTeamB = isMatchTeam(player.team, teamNames.teamB, 'B');
-      const palette = isTeamB ? TEAM_COLOR_SCHEMES.B : TEAM_COLOR_SCHEMES.A;
-
-      const pNum = player.number !== undefined && player.number !== null ? player.number : (player.num || '');
-      onSelectPlayer({
-        name: player.name,
-        number: pNum,
-        role: player.role,
-        team: player.team || teamNames.teamA,
-        primaryColor: palette.primary,
-        secondaryColor: palette.secondary
-      });
-    }
+  const reload = async () => {
+    setLoading(true);
+    const res = await fetchPlayersFromFirebase(user?.uid ?? null, user?.email ?? null);
+    setLoading(false);
+    if (res?.teamA) setTeams({ teamA: res.teamA, teamB: res.teamB });
+    setPlayers(res?.players?.length ? res.players : SAMPLE_PLAYERS);
+    setStatus(res?.players?.length ? `Roster ${res.teamA} & ${res.teamB} caricato` : 'Roster demo caricato.');
   };
 
-  // Robust check for team matching
-  const isMatchTeam = (playerTeam, targetTeamName, teamIndex) => {
-    if (!playerTeam) return false;
-    const pTag = String(playerTeam).trim().toUpperCase();
-    const tTag = String(targetTeamName || '').trim().toUpperCase();
-
-    if (tTag && (pTag === tTag || pTag.includes(tTag) || tTag.includes(pTag))) return true;
-    if (teamIndex === 'A' && (pTag === 'TEAM-A' || pTag === 'TEAM_A' || pTag === 'A' || pTag === 'VPM')) return true;
-    if (teamIndex === 'B' && (pTag === 'TEAM-B' || pTag === 'TEAM_B' || pTag === 'B' || pTag === 'VHP')) return true;
-
-    return false;
-  };
-
-  const filteredPlayers = players.filter((p) => {
-    if (p.active === false) return false;
-    if (selectedTeamFilter === 'ALL') return true;
-    if (selectedTeamFilter === 'TEAM_A') {
-      return isMatchTeam(p.team, teamNames.teamA, 'A') || !p.team;
-    }
-    if (selectedTeamFilter === 'TEAM_B') {
-      return isMatchTeam(p.team, teamNames.teamB, 'B');
-    }
-    return true;
+  const filtered = players.filter((p) => p.active !== false).filter((p) => {
+    if (filter === 'ALL') return true;
+    if (filter === 'A') return isMatchTeam(p.team, teams.teamA, 'A') || !p.team;
+    return isMatchTeam(p.team, teams.teamB, 'B');
   });
 
-  const teamAPlayers = players.filter((p) => p.active !== false && (isMatchTeam(p.team, teamNames.teamA, 'A') || !p.team));
-  const teamBPlayers = players.filter((p) => p.active !== false && isMatchTeam(p.team, teamNames.teamB, 'B'));
+  const countA = players.filter((p) => p.active !== false && (isMatchTeam(p.team, teams.teamA, 'A') || !p.team)).length;
+  const countB = players.filter((p) => p.active !== false && isMatchTeam(p.team, teams.teamB, 'B')).length;
 
   return (
-    <div className="firebase-player-selector-box">
-      <div className="firebase-box-header">
-        <div className="flex items-center gap-2">
-          <Database size={16} className="text-cyan-400" />
-          <span className="font-bold text-sm text-white">Active Players ({teamNames.teamA} vs {teamNames.teamB})</span>
-        </div>
-
+    <div className="roster">
+      <header className="roster__head">
+        <span>
+          <Database size={14} /> Roster attivo ({teams.teamA} vs {teams.teamB})
+        </span>
         {user ? (
-          <span className="user-logged-badge">
+          <small className="roster__user">
             <UserCheck size={12} /> {user.email.split('@')[0]}
-          </span>
+          </small>
         ) : (
-          <button onClick={onOpenAuth} className="btn-auth-link">
-            Config / Sign In
+          <button onClick={onOpenAuth} className="btn btn--link">
+            Accedi per sincronizzare
           </button>
+        )}
+      </header>
+
+      {status && <p className="roster__status">{status}</p>}
+
+      <div className="roster__filters">
+        {[['ALL', `Tutti (${players.length})`], ['A', `🔵 ${teams.teamA} (${countA})`], ['B', `🔴 ${teams.teamB} (${countB})`]].map(
+          ([id, label]) => (
+            <button
+              key={id}
+              onClick={() => setFilter(id)}
+              className={`chip chip--tiny ${filter === id ? 'chip--active' : ''}`}
+            >
+              {label}
+            </button>
+          )
         )}
       </div>
 
-      {statusMsg && <p className="text-xs text-cyan-300 font-bold mb-2">{statusMsg}</p>}
-
-      {/* Dynamic Team Selector Tabs */}
-      <div className="team-buttons-row mb-3">
-        <button
-          onClick={() => setSelectedTeamFilter('ALL')}
-          className={`team-btn team-btn-all ${selectedTeamFilter === 'ALL' ? 'active' : ''}`}
+      <div className="field field--row">
+        <span>Giocatore in campo:</span>
+        <select
+          className="select"
+          defaultValue=""
+          onChange={(e) => {
+            const player = players.find((p) => p.id === e.target.value);
+            if (!player || !onSelectPlayer) return;
+            const palette = schemeFor(player, teams.teamA, teams.teamB);
+            onSelectPlayer({
+              name: player.name,
+              number: player.number ?? player.num ?? '',
+              role: player.role || '',
+              team: player.team || '',
+              ...palette,
+            });
+          }}
         >
-          <span>All ({players.length})</span>
+          <option value="" disabled>
+            — Scegli un giocatore —
+          </option>
+          {filtered.map((p) => (
+            <option key={p.id} value={p.id}>
+              [{isMatchTeam(p.team, teams.teamB, 'B') ? `🔴 ${teams.teamB}` : `🔵 ${teams.teamA}`}]
+              #{p.number ?? p.num ?? '?'} – {p.name} ({p.role})
+            </option>
+          ))}
+        </select>
+
+        <button onClick={reload} className="btn-icon" title="Ricarica dal database">
+          <RefreshCw size={13} className={loading ? 'spin' : ''} />
         </button>
-
-        <button
-          onClick={() => setSelectedTeamFilter('TEAM_A')}
-          className={`team-btn team-btn-vpm ${selectedTeamFilter === 'TEAM_A' ? 'active' : ''}`}
-        >
-          <span className="team-badge-icon">🔵</span>
-          <span className="font-black tracking-wider">{teamNames.teamA}</span>
-          <span className="team-count-pill">{teamAPlayers.length}</span>
-        </button>
-
-        <button
-          onClick={() => setSelectedTeamFilter('TEAM_B')}
-          className={`team-btn team-btn-vhu ${selectedTeamFilter === 'TEAM_B' ? 'active' : ''}`}
-        >
-          <span className="team-badge-icon">🔴</span>
-          <span className="font-black tracking-wider">{teamNames.teamB}</span>
-          <span className="team-count-pill">{teamBPlayers.length}</span>
-        </button>
-      </div>
-
-      {/* Select Player Dropdown */}
-      <div className="input-group" style={{ marginBottom: '0.6rem' }}>
-        <label className="input-label-sm">Select Player for Overlay:</label>
-        <div className="flex gap-2">
-          <select onChange={handleSelect} className="input-text" defaultValue="">
-            <option value="" disabled>-- Choose a player on court --</option>
-            {filteredPlayers.map((p) => {
-              const isTeamB = isMatchTeam(p.team, teamNames.teamB, 'B');
-              const teamTag = isTeamB ? `🔴 ${teamNames.teamB}` : `🔵 ${teamNames.teamA}`;
-              const pNumStr = p.number !== undefined && p.number !== null ? p.number : (p.num || '');
-              return (
-                <option key={p.id} value={p.id}>
-                  [{teamTag}] #{pNumStr} - {p.name} ({p.role})
-                </option>
-              );
-            })}
-          </select>
-
-          <button onClick={loadPlayersManual} className="btn-icon-md" title="Reload from Firebase DB">
-            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-          </button>
-        </div>
       </div>
     </div>
   );

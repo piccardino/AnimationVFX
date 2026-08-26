@@ -1,186 +1,145 @@
-import React, { useState, useEffect } from 'react';
+// VolleyVFX Studio — application shell & state orchestration
+import { useState, useEffect } from 'react';
 import Navbar from './components/Navbar';
 import AnimationPreviewer from './components/AnimationPreviewer';
 import ControlsPanel from './components/ControlsPanel';
 import AnimationGallery from './components/AnimationGallery';
 import ExportModal from './components/ExportModal';
 import FirebaseAuthModal from './components/FirebaseAuthModal';
-import { PRESETS, renderCanvasFrame } from './engine/canvasRenderers';
+import { PRESETS, buildInitialConfig, getPresetById } from './lib/presets';
+import { renderCanvasFrame } from './engine/render';
 import { exportCanvasToVideo } from './engine/recorder';
-import { soundFX } from './engine/soundEffects';
 import { subscribeToAuth, logout } from './firebase/firebase';
 
 export default function App() {
-  const [activePreset, setActivePreset] = useState(PRESETS[0]);
-  const [config, setConfig] = useState({
-    presetId: PRESETS[0].id,
-    mainText: PRESETS[0].defaultMainText,
-    subText: PRESETS[0].defaultSubText,
-    primaryColor: PRESETS[0].primaryColor,
-    secondaryColor: PRESETS[0].secondaryColor,
-    accentColor: PRESETS[0].accentColor,
-    duration: PRESETS[0].duration,
-    lineThickness: 0.8,
-    exportFps: 60,
-    enableShake: true,
-  });
-
+  const [config, setConfig] = useState(buildInitialConfig);
   const [chromaBg, setChromaBg] = useState('transparent');
   const [aspectRatio, setAspectRatio] = useState('16:9');
   const [soundEnabled, setSoundEnabled] = useState(false);
 
-  // Firebase Auth State
   const [user, setUser] = useState(null);
-  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [authOpen, setAuthOpen] = useState(false);
 
-  useEffect(() => {
-    const unsubscribe = subscribeToAuth((currentUser) => {
-      setUser(currentUser);
-    });
-    return () => unsubscribe();
-  }, []);
+  const [exportState, setExportState] = useState({
+    open: false,
+    busy: false,
+    progress: 0,
+    result: null,
+  });
 
-  const handleLogout = async () => {
-    await logout();
-    setUser(null);
-  };
+  useEffect(() => subscribeToAuth(setUser), []);
 
-  // Export Modal state
-  const [isModalOpen, setIsModalOpen] = useState(false);
-  const [isExporting, setIsExporting] = useState(false);
-  const [exportProgress, setExportProgress] = useState(0);
-  const [exportResult, setExportResult] = useState(null);
+  const activePreset = getPresetById(config.presetId);
 
-  // Handle Preset Change
-  const handleSelectPreset = (preset) => {
-    setActivePreset(preset);
+  const selectPreset = (preset) =>
     setConfig((prev) => {
-      const isPlayerCard = preset.id === 'player_card';
       const sel = prev.selectedPlayer;
+      let mainText = preset.defaultMainText;
+      let subText = preset.defaultSubText;
+      let primaryColor = preset.primaryColor;
+      let secondaryColor = preset.secondaryColor;
 
-      let newMainText = preset.defaultMainText;
-      let newSubText = preset.defaultSubText;
-      let newPrimaryColor = preset.primaryColor;
-      let newSecondaryColor = preset.secondaryColor;
-
-      if (isPlayerCard && sel) {
-        newMainText = sel.name;
-        const pNum = sel.number !== undefined && sel.number !== null ? String(sel.number) : '';
-        const numPrefix = pNum ? `#${pNum} • ` : '';
-        newSubText = `${numPrefix}${sel.role}`;
-        if (sel.primaryColor) newPrimaryColor = sel.primaryColor;
-        if (sel.secondaryColor) newSecondaryColor = sel.secondaryColor;
+      if (preset.id === 'player_card' && sel) {
+        mainText = sel.name;
+        subText = `${sel.number ? `#${sel.number} • ` : ''}${sel.role}`;
       }
+      if (sel?.primaryColor && preset.id === 'player_card') primaryColor = sel.primaryColor;
+      if (sel?.secondaryColor && preset.id === 'player_card') secondaryColor = sel.secondaryColor;
 
       return {
         ...prev,
         presetId: preset.id,
-        mainText: newMainText,
-        subText: newSubText,
-        primaryColor: newPrimaryColor,
-        secondaryColor: newSecondaryColor,
+        mainText,
+        subText,
+        primaryColor,
+        secondaryColor,
         accentColor: preset.accentColor,
         duration: preset.duration,
       };
     });
-  };
 
-  // Trigger Video MP4 Export
-  const handleStartExport = async () => {
-    const canvas = document.querySelector('.overlay-canvas');
-
-    setIsModalOpen(true);
-    setIsExporting(true);
-    setExportProgress(0);
-    setExportResult(null);
-
+  const startExport = async () => {
+    setExportState({ open: true, busy: true, progress: 0, result: null });
     try {
       const result = await exportCanvasToVideo({
-        canvas,
         renderFrame: renderCanvasFrame,
         durationSeconds: config.duration || 3.5,
         fps: config.exportFps || 60,
         config,
         chromaBg,
         aspectRatio,
-        onProgress: (pct) => setExportProgress(pct),
+        onProgress: (progress) =>
+          setExportState((s) => ({ ...s, progress })),
       });
-
-      setExportResult(result);
-      setIsExporting(false);
+      setExportState({ open: true, busy: false, progress: 100, result });
     } catch (err) {
       console.error('Export error:', err);
-      setIsExporting(false);
-      alert('Si è verificato un errore durante l esportazione MP4: ' + err.message);
+      setExportState((s) => ({ ...s, open: false, busy: false }));
+      alert('Errore durante l’esportazione video: ' + err.message);
     }
   };
 
+  const closeExport = () => {
+    if (exportState.result?.videoUrl) URL.revokeObjectURL(exportState.result.videoUrl);
+    setExportState({ open: false, busy: false, progress: 0, result: null });
+  };
+
   return (
-    <div className="app-container">
-      {/* Top Navbar */}
+    <div className="app">
       <Navbar
         soundEnabled={soundEnabled}
-        setSoundEnabled={setSoundEnabled}
+        onToggleSound={setSoundEnabled}
         activePreset={activePreset}
-        onQuickExport={handleStartExport}
+        onQuickExport={startExport}
         user={user}
-        onOpenAuth={() => setIsAuthModalOpen(true)}
-        onLogout={handleLogout}
+        onOpenAuth={() => setAuthOpen(true)}
+        onLogout={async () => {
+          await logout();
+          setUser(null);
+        }}
       />
 
-      {/* Main Content Dashboard */}
-      <main className="main-content">
-        <div className="workspace-grid">
-          {/* Left Column: Live Canvas Viewport */}
-          <div className="left-column">
-            <AnimationPreviewer
-              config={config}
-              chromaBg={chromaBg}
-              setChromaBg={setChromaBg}
-              soundEnabled={soundEnabled}
-              aspectRatio={aspectRatio}
-              setAspectRatio={setAspectRatio}
-              isExporting={isExporting}
-              onStartExport={handleStartExport}
-            />
-          </div>
+      <main className="layout">
+        <div className="layout__workspace">
+          <AnimationPreviewer
+            config={config}
+            chromaBg={chromaBg}
+            setChromaBg={setChromaBg}
+            soundEnabled={soundEnabled}
+            aspectRatio={aspectRatio}
+            setAspectRatio={setAspectRatio}
+            onStartExport={startExport}
+            isExporting={exportState.busy}
+          />
 
-          {/* Right Column: Customization Panel */}
-          <div className="right-column">
-            <ControlsPanel
-              config={config}
-              setConfig={setConfig}
-              user={user}
-              onOpenAuth={() => setIsAuthModalOpen(true)}
-            />
-          </div>
+          <ControlsPanel
+            config={config}
+            setConfig={setConfig}
+            user={user}
+            onOpenAuth={() => setAuthOpen(true)}
+          />
         </div>
 
-        {/* Bottom Section: Animation Gallery */}
-        <section className="gallery-section">
-          <AnimationGallery
-            activePreset={activePreset}
-            onSelectPreset={handleSelectPreset}
-          />
-        </section>
+        <AnimationGallery activePreset={activePreset} onSelectPreset={selectPreset} />
       </main>
 
-      {/* MP4 Export Modal */}
       <ExportModal
-        isOpen={isModalOpen}
-        onClose={() => setIsModalOpen(false)}
-        isExporting={isExporting}
-        exportProgress={exportProgress}
-        exportResult={exportResult}
+        isOpen={exportState.open}
+        onClose={closeExport}
+        isExporting={exportState.busy}
+        exportProgress={exportState.progress}
+        exportResult={exportState.result}
       />
 
-      {/* Firebase Auth Modal */}
       <FirebaseAuthModal
-        isOpen={isAuthModalOpen}
-        onClose={() => setIsAuthModalOpen(false)}
+        isOpen={authOpen}
+        onClose={() => setAuthOpen(false)}
         user={user}
-        onAuthChange={(u) => setUser(u)}
+        onAuthChange={setUser}
       />
     </div>
   );
 }
+
+// Re-exported for tests/tools that rely on the legacy module path
+export { PRESETS };
